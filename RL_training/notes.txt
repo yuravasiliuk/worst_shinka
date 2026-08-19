@@ -1,0 +1,51 @@
+Projects file structure:
+- results
+ -- tournament_table.csv 
+ -- model_score_history.csv
+ -- gen0
+    --- config.yaml
+    --- algorithm.py
+    to be generated
+    --- training_logs.txt
+    --- model.pt
+- run_play.py
+- run_tournament.py
+- run_training.py
+- run_agreggate_data.py
+- run_reset.py
+- model.py
+- train.py
+
+So the idea is that the other team creates some kind of main loop where it runs functions from our part.
+We will provide them with 5 files they can import and run main function which will be called the same as the name of the file (run_*.py)
+
+- run_reset.py (Reseting progress)
+
+- run_play.py [1/2 parameters - genId: int]  (visualization of playing 1 or 2 specific generations of agents)
+
+- run_training.py [3 parameters, genId: int, config: string and algorithm: string]
+1. Create new folder for generation
+2. Copy new config.yaml and algorithm.py there
+3. Run main function from train.py file, we provide there the path to config and algorithm and place to create a trained model file
+4. During that process train.py creates also logs from training and saves them to this gen result folder
+
+- run_tournament.py [1 parameter, genId: int]
+1. Run matches new model against old models
+2. Updates tournament_table.csv with scores
+ 
+- agreggate_data.py [1 parameter, genId: int]
+1. returns:
+ -- config.yaml
+ -- algorithm.py
+ -- tournament_table.csv
+ -- model_score_history.csv
+
+model.py - pytorch DQL class
+train.py - it uses algorithm and config for specific generation, takes model.py and creates a new train model. 
+This part is a framework for training algorithm and cannot be altered by an LLM
+algorithm.py - this is the part of the code that LLM can change and it will be provided to us from main program
+config.py - configuration for specific generation model training provided from main program. Contains width and numbers of layers and other needed things.
+training_logs.txt - something like numpy array of score average every 100 episodes during the trying and data like that
+model_score_history.csv - im pretty not sure what exactly must be there, but here we will somehow score specific generation and elo points
+
+If something is not specified and should be in some kind of config we can hardcode it for now
