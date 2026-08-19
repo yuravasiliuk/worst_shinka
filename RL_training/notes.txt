@@ -1,6 +1,6 @@
 Projects file structure:
 - results
- -- tournament_table.csv # csv or yaml - to be discussed
+ -- tournament_table.csv 
  -- model_score_history.csv
  -- gen0
     --- config.yaml
@@ -19,9 +19,9 @@ Projects file structure:
 So the idea is that the other team creates some kind of main loop where it runs functions from our part.
 We will provide them with 5 files they can import and run main function which will be called the same as the name of the file (run_*.py)
 
-- reset.py (Reseting progress)
+- run_reset.py (Reseting progress)
 
-- play.py [1/2 parameters - genId: int]  (visualizatio of playing 1 or 2 specific generations of agents)
+- run_play.py [1/2 parameters - genId: int]  (visualization of playing 1 or 2 specific generations of agents)
 
 - run_training.py [3 parameters, genId: int, config: string and algorithm: string]
 1. Create new folder for generation
@@ -40,7 +40,7 @@ We will provide them with 5 files they can import and run main function which wi
  -- tournament_table.csv
  -- model_score_history.csv
 
-model.py - abstract DQL class
+model.py - pytorch DQL class
 train.py - it uses algorithm and config for specific generation, takes model.py and creates a new train model. 
 This part is a framework for training algorithm and cannot be altered by an LLM
 algorithm.py - this is the part of the code that LLM can change and it will be provided to us from main program
