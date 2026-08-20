@@ -1,33 +1,27 @@
 """
 algorithm.py
 ------------
-Strategy module for training the DQLModel.
+RL training logic and hyperparameter defaults for DQLModel.
 
-This module houses all tunable hyperparameters and RL logic:
-  - Default training hyperparameters
-  - Exploration strategy (epsilon decay)
-  - Action selection policy
-  - Single-episode training loop (online DQN updates)
-
-Note: train.py relies on the public interface (get_hyperparameters,
-get_epsilon, and play_training_episode). Keep these function signatures
-intact when tweaking internal implementation details.
+Maintained public interface:
+  - get_hyperparameters
+  - get_epsilon
+  - select_action
+  - play_training_episode
 """
 
 import random
 
-# Default fallback values. Any key defined in config.yaml will override
-# these settings at runtime.
 DEFAULT_HYPERPARAMETERS = {
-    "gamma": 0.99,                 # Discount factor for future rewards
-    "epsilon_start": 1.0,          # Initial exploration rate
-    "epsilon_end": 0.05,           # Minimum exploration floor
-    "epsilon_decay_episodes": 500,  # Linear decay schedule duration
+    "gamma": 0.99,                 # Discount factor
+    "epsilon_start": 1.0,          # Starting exploration rate
+    "epsilon_end": 0.05,           # Minimum exploration rate
+    "epsilon_decay_episodes": 500,  # Decay duration in episodes
 }
 
 
 def get_hyperparameters(config: dict) -> dict:
-    """Merges config settings with system defaults, favoring user overrides."""
+    """Override defaults with config.yaml values if present."""
     hyperparameters = dict(DEFAULT_HYPERPARAMETERS)
     for key in DEFAULT_HYPERPARAMETERS:
         if key in config:
@@ -36,7 +30,7 @@ def get_hyperparameters(config: dict) -> dict:
 
 
 def get_epsilon(episode_index: int, hyperparameters: dict) -> float:
-    """Calculates linear epsilon decay based on current episode progress."""
+    """Linear epsilon decay schedule."""
     start = hyperparameters["epsilon_start"]
     end = hyperparameters["epsilon_end"]
     decay_episodes = max(1, hyperparameters["epsilon_decay_episodes"])
@@ -46,7 +40,7 @@ def get_epsilon(episode_index: int, hyperparameters: dict) -> float:
 
 
 def select_action(model, observation, epsilon: float, num_actions: int) -> int:
-    """Epsilon-greedy action selection."""
+    """Standard epsilon-greedy policy."""
     if random.random() < epsilon:
         return random.randrange(num_actions)
 
@@ -62,13 +56,8 @@ def play_training_episode(
     epsilon: float,
 ) -> float:
     """
-    Runs a single training episode in the PettingZoo AEC environment.
-
-    Performs online 1-step Q-learning updates whenever `trained_agent` takes
-    a turn. Opponents currently execute random actions as a baseline.
-
-    Returns:
-        float: Cumulative reward earned by `trained_agent` during the match.
+    Runs one episode in PettingZoo and updates the model online.
+    Opponents currently pick random actions.
     """
     env.reset()
     gamma = hyperparameters["gamma"]
@@ -83,7 +72,7 @@ def play_training_episode(
 
         if agent == trained_agent:
             total_reward += reward
-            # Update Q-values using the outcome (reward + new state) of our previous action
+            # Update model based on the previous turn's outcome
             if pending_state is not None:
                 model.train_step(
                     state=pending_state,
@@ -103,7 +92,6 @@ def play_training_episode(
                 pending_state = observation
                 pending_action = action
             else:
-                # Dummy opponent behavior
                 action = random.randrange(num_actions)
 
         env.step(action)
