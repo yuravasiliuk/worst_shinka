@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from .config import DEFAULT_INITIAL_MODEL, RunConfig
+from .config import DEFAULT_INITIAL_MODEL, MODEL_MODES, RunConfig
 from .branding import print_logo
 
 def positive_int(value: str) -> int:
@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", help="run the evolution loop")
     run.add_argument("--models", nargs="+", metavar="MODEL", help="pool of models for bandit selector. Deafults to system-assigned models")
+    run.add_argument("--mode", choices=MODEL_MODES, default="medium", help="model size and context profile")
     run.add_argument("--results-dir", type=Path, default=Path("results"), help="root directory for run results")
     run.add_argument("--name", help="custom run directory name")
     run.add_argument("--initial-model", type=Path, default=DEFAULT_INITIAL_MODEL, help="model-0 path")
@@ -61,7 +62,8 @@ def main(argv: list[str] | None = None) -> int:
                 initial_model = args.initial_model,
                 generations = args.generations,
                 workers = args.workers,
-                parents = args.parents
+                parents = args.parents,
+                mode = args.mode
             )
             run_dir = run_evolution(config)
             print(f"Run directory: {run_dir}")
