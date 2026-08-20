@@ -9,11 +9,12 @@ from .config import DEFAULT_INITIAL_MODEL
 
 CONFIG_DIR_ENV = "WORST_SHINKA_CONFIG_DIR"
 API_KEY_ENV = "OPENROUTER_API_KEY"
+OPENROUTER_PREFIX = "sk-or-v1-"
 
 def config_dir() -> Path:
     override = os.environ.get(CONFIG_DIR_ENV)
     if override:
-        return Path(override).expanduser.resolve()
+        return Path(override).expanduser().resolve()
     base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return base / "worst-shinka"
 
@@ -51,14 +52,16 @@ def get_openrouter_api_key() -> str | None:
     return os.environ.get(API_KEY_ENV, "").strip() or _saved_key()
 
 def save_openrouter_api_key(api_key: str) -> Path:
+    if "\n" in api_key or "\r" in api_key:
+        raise ValueError("API key must be a single line")
     value = api_key.strip()
-    if not value:
-        raise ValueError("API key cannot be empty")
+    if not value.startswith(OPENROUTER_PREFIX):
+        raise ValueError(f"API key must start with: {OPENROUTER_PREFIX}")
+    if len(value) <= len(OPENROUTER_PREFIX) + 40:
+        raise ValueError("API key is incomplete")
     directory = config_dir()
     directory.mkdir(parents=True, exist_ok=True)
     path = credentials_path()
-    if any(character is value for character in("\n", "\r")):
-        raise ValueError("API key must be a single line")
     path.write_text(f"{API_KEY_ENV}={value}\n", encoding="utf-8")
     try:
         path.chmod(0o600)

@@ -20,3 +20,12 @@ def judge_candidates(*, candidates: list[dict[str, Any]]) -> list[dict[str, Any]
 
 def play_candidate(*, model_path: str) -> None:
     return None
+
+
+"""pliki od dawida:
+- run_play.py w tym funkcja run_play ktora odpala wizualizacje i gre,
+- run_turnament.py 
+- run_training.py
+- run_agreggate_data.py
+- run_reset.py
+"""
