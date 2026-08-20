@@ -8,11 +8,19 @@ from typing import Any
 
 from .config import RunConfig
 from . import integrations
+from worst_shinka.llm import validate_openrouter_setup
 
 log = logging.getLogger(__name__)
+#TODO ogarnac zeby mozna bylo wskazac ten sam docelowy katalog jako kontynuacja...
+class _PathEncoder(json.JSONEncoder):
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, Path):
+            return str(obj)
+        return super().default(obj)
 
 def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(str(value), indent=2, ensure_ascii=False), encoding="utf-8")
+    content = json.dumps(value, indent=2, ensure_ascii=False, cls=_PathEncoder) + "\n"
+    path.write_text(content, encoding="utf-8")
 
 def _default_run_name() -> str:
     return datetime.now(timezone.utc).strftime("run-%Y%m%d-%H%M%S-%f")
@@ -20,8 +28,9 @@ def _default_run_name() -> str:
 def run_evolution(config: RunConfig) -> Path:
     config.validate()
     results_root = config.results_dir.expanduser().resolve()
-    run_dir = results_root / _default_run_name()
+    run_dir = results_root / (config.name.strip() if config.name is not None else _default_run_name())
     run_dir.mkdir(parents=True, exist_ok=False)
+    validate_openrouter_setup(config.resolved_models(), output_path=run_dir / "model-validation.json")
 
     started_at = datetime.now(timezone.utc).isoformat()
     manifest = {
@@ -47,7 +56,7 @@ def run_evolution(config: RunConfig) -> Path:
         #placeholder Dawid provide results here
         available = integrations.fetch_candidates(limit=config.parents)
         parents = available[:config.parents]
-        selected_models = integrations.select_models_with_bandit(models=config.models, count=2)
+        selected_models = integrations.select_models_with_bandit(models=config.resolved_models(), count=2)
         proposals = integrations.evolve_with_models(models = selected_models, parents=parents, generation=generation)
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
         accepted = integrations.judge_candidates(candidates=evaluated)

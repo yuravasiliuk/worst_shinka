@@ -16,6 +16,9 @@ worst-shinka = "worst_shinka.cli:main"
 where = ["."]
 include = ["worst_shinka"]
 
+[tool.setuptools.package-data]
+"worst_shinka.cli" = ["default_models.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["Tests"]
 
