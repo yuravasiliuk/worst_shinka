@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_INITIAL_MODEL = "tbd-Dawid"
+MODEL_MODES = ("low", "medium", "high")
 SYSTEM_ASSIGNED_MODELS = Path(__file__).with_name("default_models.json")
 
 def load_system_assigned_models(path: Path = SYSTEM_ASSIGNED_MODELS) -> tuple[str, ...]:
@@ -16,12 +17,13 @@ def load_system_assigned_models(path: Path = SYSTEM_ASSIGNED_MODELS) -> tuple[st
 
     models = payload.get("models") if isinstance(payload, dict) else None
     if not isinstance(models, list) or not all(isinstance(model, str) for model in models):
-        raise ValueError(f"{path} must contain a JSON object with a string list named 'models")
+        raise ValueError(f"{path} must contain a JSON object with a string list named 'models'")
 
     cleaned = tuple(model.strip() for model in models if model.strip())
-    if len(cleaned) < 2:
-        raise ValueError("system assigned model must contain at least two models")
-    if len(set(cleaned)) != len(cleaned):
+    model_ids = list(cleaned)
+    if len(cleaned) < 5:
+        raise ValueError("system assigned model must contain at least five models")
+    if len(set(model_ids)) != len(model_ids):
         raise ValueError("system assigned model must not contain any duplicate models")
 
     return cleaned
@@ -36,8 +38,11 @@ class RunConfig:
     generations: int = 10
     workers: int = 1
     parents: int = 1
+    mode: str = "medium"
 
     def validate(self) -> "RunConfig":
+        if self.mode not in MODEL_MODES:
+            raise ValueError(f"mode must be one of: {', '.join(MODEL_MODES)}")
         if self.models is not None:
             cleaned_models = [model.strip() for model in self.models if model.strip()]
             if len(cleaned_models) < 2:
