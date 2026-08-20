@@ -3,7 +3,20 @@ import os
 import torch
 from pettingzoo.atari import tennis_v3
 
-from utils import MAX_CYCLES, RAM_GAMES, RESULTS_DIR, TOURNAMENT_TABLE_PATH, _load_model, _model_path
+from utils import (
+    ELO_BASELINE,
+    MAX_CYCLES,
+    RAM_GAMES,
+    RESULTS_DIR,
+    TOURNAMENT_TABLE_PATH,
+    _load_model,
+    _load_model_score_history,
+    _model_path,
+    _save_model_score_history,
+)
+
+ELO_K = 32
+
 
 def _select_action(observation, model):
     with torch.no_grad():
@@ -60,12 +73,38 @@ def run_tournament(gen_id):
     table.append([None] * (gen_id + 1))
 
     # Playing tournament matches
+    score_history = _load_model_score_history()
+    opponent_elo = {row[0]: (ELO_BASELINE if row[1] is None else row[1]) for row in score_history}
+
+    actual_total = 0.0
+    expected_total = 0.0
     for opp_id, opponent_model in opponent_models.items():
         games_current, games_opp = _play_match(current_model, opponent_model)
         table[gen_id][opp_id] = games_current
         table[opp_id][gen_id] = games_opp
 
+        if games_current > games_opp:
+            actual = 1.0
+        elif games_current < games_opp:
+            actual = 0.0
+        else:
+            actual = 0.5
+        expected = 1 / (1 + 10 ** ((opponent_elo.get(opp_id, ELO_BASELINE) - ELO_BASELINE) / 400))
+        actual_total += actual
+        expected_total += expected
+
     _save_table(table)
+
+    # Batch ELO update: one aggregate update for gen_id vs. the whole round,
+    # not one update per match.
+    num_matches = len(opponent_models)
+    new_elo = ELO_BASELINE + ELO_K * (actual_total / num_matches - expected_total / num_matches)
+    for row in score_history:
+        if row[0] == gen_id:
+            row[1] = new_elo
+            break
+    _save_model_score_history(score_history)
+
     return True
     
 

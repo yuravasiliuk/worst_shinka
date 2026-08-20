@@ -1,61 +1,67 @@
 import os
-import csv
-import yaml  # pip install pyyaml if not already installed
 
-RESULTS_DIR = "results" # Base folder where all generation results live
+from utils import RESULTS_DIR
 
 
 def run_agreggate_data(gen_id: int) -> dict:
     """
     Reads and returns the following files for a given generation:
-      - config.yaml              (parsed as a dict)
-      - algorithm.py             (returned as raw source text)
-      - tournament_table.csv     (parsed as a list of row-dicts)
-      - model_score_history.csv  (parsed as a list of row-dicts)
+      - config.yaml              (raw text)
+      - algorithm.py             (raw text)
+      - training_logs.txt        (raw text)
+      - tournament_table.csv     (parsed as a list of lists, None or int)
+      - model_score_history.csv  (raw text)
 
     Args:
-        gen_id: generation number (e.g. 1 -> results/gen1)
+        gen_id: generation number (e.g. 1 -> results/gen_1)
 
     Returns:
-        dict with keys: "config", "algorithm", "tournament_table", "model_score_history"
+        dict with keys: "config", "algorithm", "training_logs", "tournament_table", "model_score_history"
     """
 
     #Path to this generation's folder
-    gen_folder = os.path.join(RESULTS_DIR, f"gen{gen_id}")
+    gen_folder = os.path.join(RESULTS_DIR, f"gen_{gen_id}")
 
 
-    # config.yaml:  structured data, so we parse it into a dict
+    # config.yaml: returned as raw text, the caller can parse it if it needs to
     config_path = os.path.join(gen_folder, "config.yaml")
     with open(config_path, "r") as f:
-        config_data = yaml.safe_load(f)
+        config_data = f.read()
 
-    # algorithm.py: this is Python source code, not data, we just read it as plain text instead of trying to parse it 
+    # algorithm.py: this is Python source code, not data, we just read it as plain text instead of trying to parse it
     algorithm_path = os.path.join(gen_folder, "algorithm.py")
     with open(algorithm_path, "r") as f:
         algorithm_data = f.read()
 
-    # tournament_table.csv: this lives in shared results/folder, not inside of the gen folder, because it covers ALL generations.
-    # might become YAML instead of CSV - I will keep it as CSV for now, but if we switch to YAML, this will need to be updated.
-    tournament_path = os.path.join(RESULTS_DIR, "tournament_table.csv")
-    tournament_data = _read_csv(tournament_path)
+    # training_logs.txt: returned as raw text
+    training_logs_path = os.path.join(gen_folder, "training_logs.txt")
+    with open(training_logs_path, "r") as f:
+        training_logs_data = f.read()
 
-    # model_score_history.csv
+    # tournament_table.csv: this lives in shared results/folder, not inside of the gen folder, because it covers ALL generations.
+    # ';'-delimited, no header - matches exactly what run_tournament.py writes.
+    tournament_path = os.path.join(RESULTS_DIR, "tournament_table.csv")
+    tournament_data = _read_tournament_table(tournament_path)
+
+    # model_score_history.csv: returned as raw text
     score_history_path = os.path.join(RESULTS_DIR, "model_score_history.csv")
-    score_history_data = _read_csv(score_history_path)
+    with open(score_history_path, "r") as f:
+        score_history_data = f.read()
 
     return {
         "config": config_data,
         "algorithm": algorithm_data,
+        "training_logs": training_logs_data,
         "tournament_table": tournament_data,
         "model_score_history": score_history_data,
     }
 
 
-def _read_csv(path: str) -> list:
-    """Reads a CSV file into a list of dicts (one dict per row, keyed by header)."""
-    with open(path, "r", newline="") as f:
-        reader = csv.DictReader(f)
-        return list(reader)
+def _read_tournament_table(path: str) -> list:
+    """Reads the ';'-delimited, headerless tournament table into a list of lists."""
+    with open(path, "r") as f:
+        rows = [line.strip().split(";") for line in f if line.strip()]
+    return [[None if v == "None" else int(v) for v in row] for row in rows]
 
 
 if __name__ == "__main__":
