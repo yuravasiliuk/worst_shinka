@@ -8,10 +8,10 @@ from typing import Any
 
 from .config import RunConfig
 from . import integrations
-from worst_shinka.llm import validate_openrouter_setup
+from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
 
 log = logging.getLogger(__name__)
-#TODO ogarnac zeby mozna bylo wskazac ten sam docelowy katalog jako kontynuacja...
+
 class _PathEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Any:
         if isinstance(obj, Path):
@@ -25,24 +25,22 @@ def _write_json(path: Path, value: Any) -> None:
 def _default_run_name() -> str:
     return datetime.now(timezone.utc).strftime("run-%Y%m%d-%H%M%S-%f")
 
-def run_evolution(config: RunConfig) -> Path:
-    config.validate()
-    results_root = config.results_dir.expanduser().resolve()
-    run_dir = results_root / (config.name.strip() if config.name is not None else _default_run_name())
-    run_dir.mkdir(parents=True, exist_ok=False)
-    validate_openrouter_setup(config.resolved_models(), output_path=run_dir / "model-validation.json")
 
-    started_at = datetime.now(timezone.utc).isoformat()
-    manifest = {
-        "schema_version" : 1,
-        "status" : "running",
-        "started_at" : started_at,
-        "config": config.to_dict()
-    }
-    _write_json(run_dir / "run.json", manifest)
+def _generation_numbers(run_dir: Path) -> list[int]:
+    numbers = []
+    for path in run_dir.glob("gen_*"):
+        if not path.is_dir():
+            continue
+        try:
+            numbers.append(int(path.name.removeprefix("gen_")))
+        except ValueError:
+            continue
+    return sorted(numbers)
 
-    lineage: list[dict[str, Any]] = [{
-        "id":"model-0",
+
+def _initial_lineage(config: RunConfig) -> list[dict[str, Any]]:
+    return [{
+        "id": "model-0",
         "parent_id": None,
         "generation": 0,
         "model": config.initial_model,
@@ -50,27 +48,104 @@ def run_evolution(config: RunConfig) -> Path:
         "status": "initial-placeholder"
     }]
 
-    for generation in range(1, config.generations + 1):
+
+def run_evolution(config: RunConfig) -> Path:
+    config.validate()
+    results_root = config.results_dir.expanduser().resolve()
+    run_dir = results_root / (config.name.strip() if config.name is not None else _default_run_name())
+    is_continuation = run_dir.exists()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    if is_continuation:
+        log.info("Catalog already existed at %s; continuing with the next generation", run_dir)
+
+    models_path = run_dir / "models.json"
+    previous_model_ids: tuple[str, ...] = ()
+    if models_path.exists():
+        previous_selection = json.loads(models_path.read_text(encoding="utf-8"))
+        previous_mode = previous_selection.get("mode")
+        previous_models = previous_selection.get("models", [])
+        previous_model_ids = tuple(
+            item["id"] for item in previous_models if isinstance(item, dict) and isinstance(item.get("id"), str)
+        )
+        if previous_mode != config.mode:
+            log.info("Model mode changed from %s to %s; selecting a new model pool", previous_mode, config.mode)
+            previous_model_ids = ()
+
+    validation_path = validate_openrouter_setup(config.resolved_models(), output_path=run_dir / "model-validation.json")
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    selected_models = select_models_for_mode(validation["results"], config.mode, preferred_model_ids=previous_model_ids)
+    _write_json(
+        models_path,
+        {"mode": config.mode, "count": len(selected_models), "models": selected_models},
+    )
+
+    validated_models = tuple(item["id"] for item in selected_models)
+    kept_models = [model_id for model_id in previous_model_ids if model_id in validated_models]
+    if previous_model_ids:
+        log.info("ℹ️ Kept %s previously selected models: %s", len(kept_models), ", ".join(kept_models) or "none")
+    log.info("ℹ️ Selected %s valid models: %s", len(validated_models), ", ".join(validated_models))
+
+    lineage_path = run_dir / "lineage.json"
+    lineage = json.loads(lineage_path.read_text(encoding="utf-8")).get("nodes", []) if lineage_path.exists() else _initial_lineage(config)
+    generations = _generation_numbers(run_dir)
+    if not generations:
+        gen_dir = run_dir / "gen_0"
+        gen_dir.mkdir()
+        _write_json(gen_dir / "metrics.json", {"generation": 0, "status": "initial-placeholder"})
+        _write_json(gen_dir / "solutions.json", {"generation": 0, "solutions": lineage})
+        _write_json(lineage_path, {"nodes": lineage})
+        generations = [0]
+
+    manifest_path = run_dir / "run.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    else:
+        manifest = {
+            "schema_version": 1,
+            "config": config.to_dict(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+    manifest.update({"status": "running", "last_generation": max(generations)})
+    _write_json(manifest_path, manifest)
+
+    first_generation = max(generations) + 1
+    for generation in range(first_generation, first_generation + config.generations):
         log.info("Generation %s/%s", generation, config.generations)
+        gen_dir = run_dir / f"gen_{generation}"
+        gen_dir.mkdir()
 
         #placeholder Dawid provide results here
         available = integrations.fetch_candidates(limit=config.parents)
         parents = available[:config.parents]
-        selected_models = integrations.select_models_with_bandit(models=config.resolved_models(), count=2)
-        proposals = integrations.evolve_with_models(models = selected_models, parents=parents, generation=generation)
+        evolution_models = integrations.select_models_with_bandit(models=validated_models, count=5)
+        proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
         accepted = integrations.judge_candidates(candidates=evaluated)
         lineage.extend(accepted)
 
-        _write_json(run_dir / "lineage.json", {"nodes":lineage})
+        _write_json(gen_dir / "metrics.json", {
+            "generation": generation,
+            "proposals": len(proposals),
+            "evaluated": len(evaluated),
+            "accepted": len(accepted),
+        })
+        _write_json(gen_dir / "solutions.json", {
+            "generation": generation,
+            "models": evolution_models,
+            "proposals": proposals,
+            "evaluated": evaluated,
+            "accepted": accepted,
+        })
+        _write_json(gen_dir / "lineage.json", {"nodes": lineage})
+        _write_json(lineage_path, {"nodes": lineage})
 
     manifest.update({
-        "Status": "integration-placeholders-completed",
+        "status": "integration-placeholders-completed",
         "finished_at": datetime.now(timezone.utc).isoformat(),
-        "note": "The CLI loop ran, placeholders to replace"
+        "last_generation": max(_generation_numbers(run_dir)),
+        "note": "The CLI loop ran, placeholders to replace",
     })
 
-    _write_json(run_dir / "run.json", manifest)
-    _write_json(run_dir / "lineage.json", {"nodes":lineage})
+    _write_json(manifest_path, manifest)
 
     return run_dir
