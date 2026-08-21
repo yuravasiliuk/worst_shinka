@@ -2,3 +2,6 @@ venv
 venv/*
 __pycache__/
 *.pyc
+.vscode
+RL_training/_sample*
+RL_training/results

@@ -11,7 +11,7 @@ import importlib.util
 import os
 import random
 import time
-
+import torch
 import numpy as np
 import yaml
 from pettingzoo.atari import tennis_v3
@@ -124,11 +124,13 @@ def train(gen_id: int, config_path: str, algorithm_path: str, model_output_path:
     num_actions = env.action_space(TRAINED_AGENT).n
 
     hidden_layers = config.get("hidden_layers", [])
+
     model = DQLModel(
         input_size=INPUT_SIZE,
         output_size=num_actions,
         hidden_layers=hidden_layers,
     )
+    print(f'\n\nModel device: {model.device}\n\n')
 
     # Train against a random past generation (non-transitive matchups are
     # less of a risk than always training against just gen_id - 1). gen0

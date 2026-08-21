@@ -30,22 +30,25 @@ class DQLModel(nn.Module):
             lr=0.001
         )
 
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.to(self.device)
+
         self.loss_function = nn.MSELoss()
 
     def forward(self, x):
-        return self.network(x)
+        return self.network(x.to(self.device))
 
     def predict(self, state):
         """Return Q-values for the given state."""
         state_tensor = torch.tensor(
             state,
             dtype=torch.float32
-        )
+        ).to(self.device)
 
         with torch.no_grad():
             q_values = self.network(state_tensor)
 
-        return q_values.numpy()
+        return q_values.cpu().numpy()
 
     def train_step(
         self,
@@ -61,12 +64,12 @@ class DQLModel(nn.Module):
         state_tensor = torch.tensor(
             state,
             dtype=torch.float32
-        )
+        ).to(self.device)
 
         next_state_tensor = torch.tensor(
             next_state,
             dtype=torch.float32
-        )
+        ).to(self.device)
 
         # Current Q-values
         q_values = self.network(state_tensor)
@@ -79,16 +82,9 @@ class DQLModel(nn.Module):
             next_q_values = self.network(next_state_tensor)
             max_next_q = torch.max(next_q_values)
 
-            if done:
-                target_q = torch.tensor(
-                    reward,
-                    dtype=torch.float32
-                )
-            else:
-                target_q = torch.tensor(
-                    reward,
-                    dtype=torch.float32
-                ) + gamma * max_next_q
+            target_q = torch.tensor(reward, dtype=torch.float32).to(self.device)
+            if not done:
+                target_q += gamma * max_next_q
 
         # Calculate loss
         loss = self.loss_function(
