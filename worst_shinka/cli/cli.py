@@ -5,6 +5,9 @@ import logging
 from pathlib import Path
 from .config import DEFAULT_INITIAL_MODEL, MODEL_MODES, RunConfig
 from .branding import print_logo
+from .terminal import configure_logging, print_login_intro, print_login_success, print_logout_result
+
+log = logging.getLogger(__name__)
 
 def positive_int(value: str) -> int:
     parsed = int(value)
@@ -50,7 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    #logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    configure_logging()
     try:
         if args.command == "run":
             from .orchestrator import run_evolution
@@ -82,31 +86,30 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "play":
-            from .integrations import play_candidate
+            from .play import run_game
 
             model_path = args.model_path.expanduser().resolve()
             if not model_path.exists():
                 raise FileNotFoundError(f"Model path does not exists: {model_path}")
-            play_candidate(model_path = str(model_path))
-            print(f"Play placeholder: model={model_path}")
-            return 0
+
+            return run_game(model_path)
 
         from . import settings
 
         if args.config_command == "login":
+            print_login_intro(settings.credentials_path())
             path = settings.login()
-            print(f"OpenRouter API key has been saved in {path}")
+            print_login_success(path)
             return 0
         if args.config_command == "logout":
             removed = settings.logout()
-            print("OpenRouter API key has been removed." if removed else "No API key was found.")
-            if settings.api_key_source():
-                print("API key is still provided by the OPENROUTER_API_KEY environment variable.")
+            print_logout_result(removed=removed, still_connected=settings.api_key_source() is not None)
             return 0
         print(settings.display_status())
         return 0
     except(FileExistsError, FileNotFoundError, ValueError, RuntimeError) as exc:
-        parser.error(str(exc))
+        log.error("%s", exc)
+        return 2
     return 2
 
 

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Callable
 from .config import DEFAULT_INITIAL_MODEL
+from .terminal import format_config_status
 
 CONFIG_DIR_ENV = "WORST_SHINKA_CONFIG_DIR"
 API_KEY_ENV = "OPENROUTER_API_KEY"
@@ -85,20 +86,26 @@ def logout() -> bool:
 def display_status() -> str:
     source = api_key_source()
     key = get_openrouter_api_key()
-    lines = [
-        f"User config directory: {config_dir()}",
-        f"Default initial model: {DEFAULT_INITIAL_MODEL}", 
-        "Default results directory: results",
-        "Default generations: 10", 
-        "Default workers: 1",
-        "Default parents: 4",
-        f"OpenRouter: {'connected' if source else 'not connected'}"
-    ]
-    if source:
-        lines.append(f"Credential source: {source}")
-    if key:
-        lines.append(f"API key: {mask_api_key(key)}")
-    return "\n".join(lines)
+    # lines = [
+    #     f"User config directory: {config_dir()}",
+    #     f"Default initial model: {DEFAULT_INITIAL_MODEL}", 
+    #     "Default results directory: results",
+    #     "Default generations: 10", 
+    #     "Default workers: 1",
+    #     "Default parents: 4",
+    #     f"OpenRouter: {'connected' if source else 'not connected; Run: `worst-shinka config login`'}"
+    # ]
+    # if source:
+    #     lines.append(f"Credential source: {source}")
+    # if key:
+    #     lines.append(f"API key: {mask_api_key(key)}")
+    # return "\n".join(lines)
+    
+    return format_config_status(
+        config_directory=config_dir(),
+        source=source, 
+        masked_key=mask_api_key(key) if key else None
+    )
 
 def mask_api_key(api_key: str) -> str:
     value = api_key.strip()
