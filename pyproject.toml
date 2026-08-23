@@ -7,7 +7,9 @@ name = "worst-shinka"
 version = "0.0.0"
 description = "CLI shell for the Worst Shinka evolution infrastructure"
 requires-python = ">=3.10"
-dependencies =[]
+dependencies =[
+    "openai"
+]
 
 [project.scripts]
 worst-shinka = "worst_shinka.cli:main"
