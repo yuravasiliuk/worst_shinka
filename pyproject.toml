@@ -7,14 +7,20 @@ name = "worst-shinka"
 version = "0.0.0"
 description = "CLI shell for the Worst Shinka evolution infrastructure"
 requires-python = ">=3.10"
-dependencies =[]
+dependencies =[
+    "numpy",
+    "pygame",
+    "PyYAML",
+    "torch==2.8.0",
+    "pettingzoo[atari]"
+]
 
 [project.scripts]
 worst-shinka = "worst_shinka.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["worst_shinka"]
+include = ["worst_shinka*"]
 
 [tool.setuptools.package-data]
 "worst_shinka.cli" = ["default_models.json"]

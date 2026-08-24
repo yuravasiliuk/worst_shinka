@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--mode", choices=MODEL_MODES, default="medium", help="model size and context profile")
     run.add_argument("--results-dir", type=Path, default=Path("results"), help="root directory for run results")
     run.add_argument("--name", help="custom run directory name")
-    run.add_argument("--initial-model", type=Path, default=DEFAULT_INITIAL_MODEL, help="model-0 path")
+    run.add_argument("--initial-model", type=Path, default=DEFAULT_INITIAL_MODEL, help="directory containing standarized gen_0 inputs")
     run.add_argument("--generations", type=positive_int, default=5, help="number of evolution generations")
     run.add_argument("--workers", type=positive_int, default=1, help="maximum concurrent workers")
     run.add_argument("--parents", type=positive_int, default=4, help="number of parents requested per evolution")
@@ -41,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     play = subparsers.add_parser("play", help="launch a game from a selected result run")
     play.add_argument("--model-path", required=True, type=Path, help="path to the model against which the user wants to play")
+    play.add_argument("--opponent-path", type=Path, help="second model for bot-vs-bot match")
+
+
+    reset = subparsers.add_parser("reset", help = "reset training progress for a selected run")
+    reset.add_argument("--run-path", required=True, type=Path, help = "reset training progress for a selected run")
 
     visualize = subparsers.add_parser("visualize", help="show an evolution tree for a selected run")
     visualize.add_argument("--run-path", required=True, type=Path, help="path to a run directory")
@@ -92,7 +97,23 @@ def main(argv: list[str] | None = None) -> int:
             if not model_path.exists():
                 raise FileNotFoundError(f"Model path does not exists: {model_path}")
 
-            return run_game(model_path)
+            opponent_path = None
+            if args.opponent_path is not None:
+                opponent_path = args.opponent_path.expanduser().resolve()
+                if not opponent_path.exists():
+                    raise FileNotFoundError(f"Opponent model path does not exists: {opponent_path}")
+
+            return run_game(model_path, opponent_path)
+
+        if args.command == "reset":
+            from .integrations import reset_run
+
+            run_path = args.run_path.expanduser().resolve()
+            if not run_path.is_dir():
+                raise FileNotFoundError(f"Run path does not exist: {run_path}")
+
+            reset_run(run_dir=run_path)
+            log.warning(f"Reset run directory: {run_path}")
 
         from . import settings
 

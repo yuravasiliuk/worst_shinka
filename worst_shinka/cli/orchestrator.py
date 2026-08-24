@@ -30,7 +30,7 @@ def _default_run_name() -> str:
 def _generation_numbers(run_dir: Path) -> list[int]:
     numbers = []
     for path in run_dir.glob("gen_*"):
-        if not path.is_dir():
+        if not path.is_dir() or not (path / "model.pt").is_file():
             continue
         try:
             numbers.append(int(path.name.removeprefix("gen_")))
@@ -56,6 +56,7 @@ def run_evolution(config: RunConfig) -> Path:
     run_dir = results_root / (config.name.strip() if config.name is not None else _default_run_name())
     is_continuation = run_dir.exists()
     run_dir.mkdir(parents=True, exist_ok=True)
+    integrations.configure_run(run_dir)
     print_startup_info(config, run_dir)
 
     if is_continuation:
@@ -95,8 +96,23 @@ def run_evolution(config: RunConfig) -> Path:
     total_cost = 0.0
     if not generations:
         gen_dir = run_dir / "gen_0"
-        gen_dir.mkdir()
-        _write_json(gen_dir / "metrics.json", {"generation": 0, "status": "initial-placeholder"})
+        gen_dir.mkdir(exist_ok=True)
+        # _write_json(gen_dir / "metrics.json", {"generation": 0, "status": "initial-placeholder"})
+        initial_src = Path(config.initial_model).expanduser()
+        if initial_src.is_dir():
+            integrations.prepare_initial_generation(source_dir=initial_src, generation_dir=gen_dir)
+            initial_candidates = integrations.train_and_evaluate(
+                proposals=[{"generation": 0, "generation_dir": str(gen_dir)}], workers=1
+            )
+            if initial_candidates:
+                lineage = initial_candidates
+        initial_node = lineage[0] if lineage else {}
+        _write_json(gen_dir / "metrics.json", {
+            "generation": 0,
+            "status": initial_node.get("status", "initial-placeholder"),
+            "score": initial_node.get("score"),
+            "elo": initial_node.get("elo")
+        }) 
         _write_json(gen_dir / "solutions.json", {"generation": 0, "solutions": lineage})
         _write_json(lineage_path, {"nodes": lineage})
         generations = [0]
@@ -114,7 +130,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "status": initial_status,
                 "score":initial.get("score", "-") if initial.get("score") is not None else "-",
                 "cost": initial.get("cost", "-"),
-                "complexity": initial.get("complexity", "-"),
+                "elo": initial.get("elo", "-"),
                 "time": initial.get("time", "-")
             }],
             generation=0,
@@ -159,6 +175,14 @@ def run_evolution(config: RunConfig) -> Path:
         log.info("Generation %s/%s", generation, total_generations)
         evolution_models = integrations.select_models_with_bandit(models=validated_models, count=5)
         proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
+        if not proposals:
+            log.warning("No evolution proposals for generation %s - stopping", generation)
+            if not any(gen_dir.iterdir()):
+                gen_dir.rmdir()
+            break
+        for proposal in proposals:
+            proposal.setdefault("generation", generation)
+            proposal.setdefault("generation_dir", str(gen_dir))
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
         accepted = integrations.judge_candidates(candidates=evaluated)
         lineage.extend(accepted)

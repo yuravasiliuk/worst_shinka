@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_INITIAL_MODEL = "tbd-Dawid"
+DEFAULT_INITIAL_MODEL = Path(__file__).resolve().parents[2] / "initial_model"
 MODEL_MODES = ("low", "medium", "high")
 SYSTEM_ASSIGNED_MODELS = Path(__file__).with_name("default_models.json")
 

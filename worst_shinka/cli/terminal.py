@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 from typing import TextIO
-from .config import RunConfig
+from .config import RunConfig, DEFAULT_INITIAL_MODEL
 
 RESET = "\033[0m"
 PEACH = "\033[38;2;255;190;140m"
@@ -140,7 +140,7 @@ def format_config_status(*, config_directory: Path, source: str | None, masked_k
     rows.extend([
         ("", ""),
         ("Default settings", styled("Default settings", WHITE + BOLD, enabled=color)),
-        row("Initial model", "tbd-Dawid"),
+        row("Initial model", str(DEFAULT_INITIAL_MODEL), PURPLE),
         row("Mode", "medium"),
         row("Generations", 10, BLUE),
         row("Workers", 1, BLUE),
@@ -331,7 +331,7 @@ def print_gen_results(
             row.get("status") or "pending",
             check_val(row.get("score", "-")),
             check_val(row.get("cost", "-")),
-            check_val(row.get("complexity", "-")),
+            check_val(row.get("elo", "-")),
             check_val(row.get("time", "-"))
 
         ) for row in rows
@@ -345,7 +345,7 @@ def print_gen_results(
         border_color = GREEN if status == "correct" else RED if status == "incorrect" else PURPLE
         target.write(
             _render_table(
-                ("GEN", "STATUS", "SCORE", "COST", "COMPLEXITY", "TIME"),
+                ("GEN", "STATUS", "SCORE", "COST", "ELO", "TIME"),
                 [value],
                 enabled=color,
                 border_color=border_color,

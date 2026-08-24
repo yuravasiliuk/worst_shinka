@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 import logging
 import time
@@ -20,8 +19,10 @@ def _quit_pressed() -> bool:
     readable, _, _ = select.select([sys.stdin], [], [], 0)
     return bool(readable) and sys.stdin.read(1).lower() == "q"
 
-def run_game(model_path: Path) -> int:
-    process = multiprocessing.Process(target = play_candidate, kwargs={"model_path": str(model_path)}, name="worst-shinka-atari-tennis")
+def run_game(model_path: Path, opponent_path: Path | None = None) -> int:
+    process = multiprocessing.Process(target = play_candidate, 
+                                      kwargs={"model_path": str(model_path), "opponent_path": None if opponent_path is None else str(opponent_path)}, 
+                                      name="worst-shinka-atari-tennis")
     process.start()
 
     print_logo()
