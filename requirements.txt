@@ -1,7 +1,9 @@
-gymnasium
+pettingzoo[atari]==1.27.0
+torch==2.13.0
+numpy==2.5.2
+pygame-ce==2.5.8
+PyYAML==6.0.3
+AutoROM==0.6.1
+AutoROM.accept-rom-license==0.6.1
 seaborn
-pygame
-torch==2.8.0
-numpy
-PyYAML
-pettingzoo[atari]
+
