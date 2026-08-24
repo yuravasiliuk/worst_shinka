@@ -8,6 +8,11 @@ from llm.client import get_client_llm
 client: OpenAI = get_client_llm()
 # TODO refine prompts (Kalina)
 @dataclass
+
+class Judge:
+    def evaluate(proposal_1, proposal_2, history):
+        return 0
+
 class BrainstormResult:
     proposal_1: str
     proposal_2: str
@@ -61,7 +66,7 @@ class BrainstormingPipeline:
         return BrainstormResult(proposal_1=prop1_code, proposal_2=prop2_code, debate_history=debate_history)
 
 class EvolutionWorkflow:
-    def __init__(self, brainstormer: BrainstormingPipeline, judge): # judge is the Judge
+    def __init__(self, brainstormer: BrainstormingPipeline, judge: Judge): # judge is the Judge
         self.brainstormer = brainstormer
         self.judge = judge
 
