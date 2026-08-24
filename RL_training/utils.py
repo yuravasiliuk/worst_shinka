@@ -23,6 +23,7 @@ def _model_path(gen_id):
 
 def _load_model(path):
     model = torch.load(path, weights_only=False, map_location="cpu")
+    model.device = torch.device("cpu")
     model.eval()
     return model
 
