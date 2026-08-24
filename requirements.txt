@@ -1,0 +1,7 @@
+gymnasium
+seaborn
+pygame
+torch==2.8.0
+numpy
+PyYAML
+pettingzoo[atari]
