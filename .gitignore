@@ -1,7 +1,10 @@
 venv
 venv/*
-__pycache__/
 *.pyc
 .vscode
 RL_training/_sample*
 results
+.ipynb_checkpoints/
+.vscodepy
+*.egg-info
+__pycache__

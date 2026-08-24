@@ -5,3 +5,5 @@ pygame-ce==2.5.8
 PyYAML==6.0.3
 AutoROM==0.6.1
 AutoROM.accept-rom-license==0.6.1
+seaborn
+
