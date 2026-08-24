@@ -6,7 +6,7 @@ from openai import OpenAI
 from llm.client import get_client_llm
 
 client: OpenAI = get_client_llm()
-
+# TODO refine prompts (Kalina)
 @dataclass
 class BrainstormResult:
     proposal_1: str
