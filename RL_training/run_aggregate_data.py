@@ -3,7 +3,7 @@ import os
 from utils import RESULTS_DIR
 
 
-def run_agreggate_data(gen_id: int) -> dict:
+def run_aggregate_data(gen_id: int) -> dict:
     #Path to this generation's folder
     gen_folder = os.path.join(RESULTS_DIR, f"gen_{gen_id}")
 
@@ -57,5 +57,5 @@ def _read_tournament_table(path: str) -> list:
 
 if __name__ == "__main__":
     # Simple manual test hook.
-    result = run_agreggate_data(gen_id=0)
+    result = run_aggregate_data(gen_id=0)
     print(result)

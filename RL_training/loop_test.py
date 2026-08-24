@@ -1,7 +1,7 @@
 import os
 import shutil
 
-from run_agreggate_data import run_agreggate_data
+from run_aggregate_data import run_aggregate_data
 from run_tournament import run_tournament
 from run_training import run_training
 
@@ -27,7 +27,7 @@ def main():
             print(f"=== Generation {gen_id} ===")
             run_training(gen_id=gen_id, config=TEMPLATE_CONFIG, algorithm=TEMPLATE_ALGORITHM)
             run_tournament(gen_id)
-            data = run_agreggate_data(gen_id)
+            data = run_aggregate_data(gen_id)
             _print_aggregate_data_check(data)
     finally:
         os.remove(TEMPLATE_CONFIG)

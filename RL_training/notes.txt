@@ -11,7 +11,7 @@ Projects file structure:
 - run_play.py
 - run_tournament.py
 - run_training.py
-- run_agreggate_data.py
+- run_aggregate_data.py
 - run_reset.py
 - model.py
 - train.py
@@ -33,7 +33,7 @@ We will provide them with 5 files they can import and run main function which wi
 1. Run matches new model against old models
 2. Updates tournament_table.csv with scores
  
-- agreggate_data.py [1 parameter, genId: int]
+- aggregate_data.py [1 parameter, genId: int]
 1. returns:
  -- config.yaml
  -- algorithm.py
