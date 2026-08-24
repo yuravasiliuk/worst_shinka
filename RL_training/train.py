@@ -1,12 +1,3 @@
-"""
-train.py
---------
-Training loop for running a single generation. Handles env setup,
-model initialization, and logging.
-
-Keep this file static. Pass dynamic logic via config.yaml and algorithm.py.
-"""
-
 import importlib.util
 import os
 import random
@@ -29,19 +20,16 @@ GLOBAL_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".
 
 
 def _load_global_config() -> dict:
-    """Load the shared training config."""
     with open(GLOBAL_CONFIG_PATH) as f:
         return yaml.safe_load(f)["training"]
 
 
 def _load_config(config_path: str) -> dict:
-    """Load model and algorithm settings from config.yaml."""
     with open(config_path) as f:
         return yaml.safe_load(f) or {}
 
 
 def _load_algorithm(algorithm_path: str):
-    """Dynamically load algorithm.py from a given file path."""
     spec = importlib.util.spec_from_file_location("algorithm", algorithm_path)
     algorithm_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(algorithm_module)
@@ -49,7 +37,6 @@ def _load_algorithm(algorithm_path: str):
 
 
 def _play_training_episode(env, model, opponent_model, algorithm, epsilon: float, config: dict) -> float:
-    """Runs one episode in PettingZoo and updates the model online."""
     env.reset()
 
     total_reward = 0.0
@@ -90,8 +77,6 @@ def _play_training_episode(env, model, opponent_model, algorithm, epsilon: float
 
 
 def _write_training_logs(log_path: str, episode_rewards: list, log_every: int) -> None:
-    """Write interval average rewards to training_logs.txt, as a single
-    ';'-delimited line (one average per log_every episodes)."""
     rewards = np.array(episode_rewards, dtype=np.float32)
 
     if len(rewards) == 0:

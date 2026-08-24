@@ -3,15 +3,16 @@ import torch
 import yaml
 
 GLOBAL_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "global_config.yaml")
-RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+
+with open(GLOBAL_CONFIG_PATH) as _f:
+    _global_config = yaml.safe_load(_f)
+
+MAX_CYCLES = _global_config["training"]["max_steps_per_episode"]
+RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", _global_config["results_dir"])
 TOURNAMENT_TABLE_PATH = os.path.join(RESULTS_DIR, "tournament_table.csv")
 MODEL_SCORE_HISTORY_PATH = os.path.join(RESULTS_DIR, "model_score_history.csv")
 RAM_GAMES = {"first_0": 71, "second_0": 72}
 ELO_BASELINE = 1200
-MAX_CYCLES = 1000
-
-with open(GLOBAL_CONFIG_PATH) as _f:
-    MAX_CYCLES = yaml.safe_load(_f)["training"]["max_steps_per_episode"]
 
 
 def _model_path(gen_id):
@@ -28,6 +29,8 @@ def _load_model(path):
 
 def _load_model_score_history():
     if not os.path.isfile(MODEL_SCORE_HISTORY_PATH):
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        open(MODEL_SCORE_HISTORY_PATH, "w").close()
         return []
     with open(MODEL_SCORE_HISTORY_PATH) as f:
         rows = [line.strip().split(";") for line in f if line.strip()]

@@ -45,6 +45,10 @@ def _play_match(model_a, model_b):
 
 
 def _load_table():
+    if not os.path.isfile(TOURNAMENT_TABLE_PATH):
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        open(TOURNAMENT_TABLE_PATH, "w").close()
+        return []
     with open(TOURNAMENT_TABLE_PATH) as f:
         rows = [line.strip().split(";") for line in f if line.strip()]
     return [[None if v == "None" else int(v) for v in row] for row in rows]

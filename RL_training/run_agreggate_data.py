@@ -4,21 +4,6 @@ from utils import RESULTS_DIR
 
 
 def run_agreggate_data(gen_id: int) -> dict:
-    """
-    Reads and returns the following files for a given generation:
-      - config.yaml              (raw text)
-      - algorithm.py             (raw text)
-      - training_logs.txt        (raw text)
-      - tournament_table.csv     (parsed as a list of lists, None or int)
-      - model_score_history.csv  (raw text)
-
-    Args:
-        gen_id: generation number (e.g. 1 -> results/gen_1)
-
-    Returns:
-        dict with keys: "config", "algorithm", "training_logs", "tournament_table", "model_score_history"
-    """
-
     #Path to this generation's folder
     gen_folder = os.path.join(RESULTS_DIR, f"gen_{gen_id}")
 
@@ -41,10 +26,16 @@ def run_agreggate_data(gen_id: int) -> dict:
     # tournament_table.csv: this lives in shared results/folder, not inside of the gen folder, because it covers ALL generations.
     # ';'-delimited, no header - matches exactly what run_tournament.py writes.
     tournament_path = os.path.join(RESULTS_DIR, "tournament_table.csv")
+    if not os.path.isfile(tournament_path):
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        open(tournament_path, "w").close()
     tournament_data = _read_tournament_table(tournament_path)
 
     # model_score_history.csv: returned as raw text
     score_history_path = os.path.join(RESULTS_DIR, "model_score_history.csv")
+    if not os.path.isfile(score_history_path):
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        open(score_history_path, "w").close()
     with open(score_history_path, "r") as f:
         score_history_data = f.read()
 

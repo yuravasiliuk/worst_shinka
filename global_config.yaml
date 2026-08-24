@@ -1,3 +1,4 @@
+results_dir: results
 training:
   episodes_per_model: 100
   max_steps_per_episode: 1000

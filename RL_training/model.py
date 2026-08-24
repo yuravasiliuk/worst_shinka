@@ -4,7 +4,6 @@ import torch.optim as optim
 
 
 class DQLModel(nn.Module):
-    """PyTorch Deep Q-Learning model."""
 
     def __init__(self, input_size, output_size, hidden_layers=None):
         super().__init__()
@@ -59,8 +58,6 @@ class DQLModel(nn.Module):
         done,
         gamma=0.99
     ):
-        """Perform one DQN training step."""
-
         state_tensor = torch.tensor(
             state,
             dtype=torch.float32

@@ -4,4 +4,4 @@ __pycache__/
 *.pyc
 .vscode
 RL_training/_sample*
-RL_training/results
+results
