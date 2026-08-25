@@ -4,14 +4,11 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 from openai import OpenAI
 from llm.client import get_client_llm
+from .evaluation_adapter import BrainstormingEvaluationAdapter
 
 client: OpenAI = get_client_llm()
 # TODO refine prompts (Kalina)
 
-
-class Judge:
-    def evaluate(proposal_1, proposal_2, history):
-        return proposal_1, 0, "wszystko git"
 @dataclass
 class BrainstormResult:
     proposal_1: str
@@ -19,10 +16,12 @@ class BrainstormResult:
     debate_history: List[Dict[str, str]]
 
 class BrainstormingPipeline:
-    def __init__(self, model_a: str, model_b: str, max_debate_rounds: int = 2):
+    def __init__(self, model_a: str, model_b: str, gen_id: int, config_path: str, max_debate_rounds: int = 2):
         self.model_a = model_a
         self.model_b = model_b
         self.max_debate_rounds = max_debate_rounds
+        self.gen_id = gen_id
+        self.config_path = config_path
     def _call_llm(self, model: str, system_prompt: str, user_prompt: str) -> str:
         response = client.chat.completions.create(
             model=model,
@@ -66,27 +65,28 @@ class BrainstormingPipeline:
         return BrainstormResult(proposal_1=prop1_code, proposal_2=prop2_code, debate_history=debate_history)
 
 class EvolutionWorkflow:
-    def __init__(self, brainstormer: BrainstormingPipeline, judge: Judge): # judge is the Judge
+    def __init__(self, brainstormer: BrainstormingPipeline, judge: BrainstormingEvaluationAdapter):
         self.brainstormer = brainstormer
         self.judge = judge
 
     def execute_crossover(self, parents_data: List[Dict], max_judge_retries: int = 3):
         rejection_reason = None
         
-        for attempt in range(max_judge_retries):
+        for _ in range(max_judge_retries):
             proposals = self.brainstormer.run_brainstorming(parents_data, rejection_reason)
             
-            judge_decision, decision, text = self.judge.evaluate(
+            result = self.judge.evaluate(
                 proposal_1=proposals.proposal_1, 
                 proposal_2=proposals.proposal_2,
-                history=proposals.debate_history
+                config_path=self.brainstormer.config_path,
+                gen_id=self.brainstormer.gen_id
             )
             
-            if decision == 0:
+            if result["winner"]:
                 print(f"Success! Judge selected proposal")
-                return judge_decision
+                return result
             
-            print(f"Looping back. Rejection reason: {text}")
-            rejection_reason = text
+            print(f"Looping back. Metrics {result["metrics"]}")
+            rejection_reason = f"Lack of sufficient winner. Metrics of both models: {result["metrics"]}"
 
         raise RuntimeError("Failed to satisfy Judge within max retries.")
