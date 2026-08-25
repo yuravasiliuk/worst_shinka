@@ -22,6 +22,7 @@ MAX_CYCLES = _global_config["training"]["max_steps_per_episode"]
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", _global_config["results_dir"])
 TOURNAMENT_TABLE_PATH = os.path.join(RESULTS_DIR, "tournament_table.csv")
 MODEL_SCORE_HISTORY_PATH = os.path.join(RESULTS_DIR, "model_score_history.csv")
+MODEL_SCORE_HISTORY_HEADER = "generation;elo;score;time_seconds"
 RAM_GAMES = {"first_0": 71, "second_0": 72}
 ELO_BASELINE = 1200
 
@@ -49,19 +50,35 @@ def _load_model(path):
 
 
 def _load_model_score_history():
-    if not os.path.isfile(MODEL_SCORE_HISTORY_PATH):
-        os.makedirs(RESULTS_DIR, exist_ok=True)
-        open(MODEL_SCORE_HISTORY_PATH, "w").close()
+    # Files created before the header column existed (or pre-touched empty by
+    # worst_shinka's configure_run) have no header line yet - (re)write one via
+    # _save_model_score_history so every row after this point is 4 columns.
+    if not os.path.isfile(MODEL_SCORE_HISTORY_PATH) or os.path.getsize(MODEL_SCORE_HISTORY_PATH) == 0:
+        _save_model_score_history([])
         return []
     with open(MODEL_SCORE_HISTORY_PATH) as f:
-        rows = [line.strip().split(";") for line in f if line.strip()]
-    return [[int(r[0]), None if r[1] == "None" else float(r[1]), None if r[2] == "None" else float(r[2])] for r in rows]
+        lines = [line.strip() for line in f if line.strip()]
+    rows = [line.split(";") for line in lines[1:]]  # lines[0] is the header
+    return [
+        [
+            int(r[0]),
+            None if r[1] == "None" else float(r[1]),
+            None if r[2] == "None" else float(r[2]),
+            None if r[3] == "None" else float(r[3]),
+        ]
+        for r in rows
+    ]
 
 
 def _save_model_score_history(rows):
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(MODEL_SCORE_HISTORY_PATH, "w") as f:
-        for gen_id, elo, avg in rows:
-            f.write(f"{gen_id};{'None' if elo is None else elo};{'None' if avg is None else avg}\n")
+        f.write(MODEL_SCORE_HISTORY_HEADER + "\n")
+        for gen_id, elo, avg, duration in rows:
+            f.write(
+                f"{gen_id};{'None' if elo is None else elo};"
+                f"{'None' if avg is None else avg};{'None' if duration is None else duration}\n"
+            )
 
 
 def _styled(text: object, color: str, *, enabled: bool) -> str:
