@@ -93,17 +93,18 @@ def prepare_initial_generation(*, source_dir: Path, generation_dir: Path) -> Non
 def fetch_candidates(*, limit: int) -> list[dict[str, Any]]:
     rows = _rl_modules()["utils"]._load_model_score_history()
     candidates = []
-    for gen, elo, score in reversed(rows):
+    for gen, elo, score, duration in reversed(rows):
         model = _require_run() / f"gen_{gen}" / "model.pt"
         candidates.append({
             "id": f"model-{gen}",
             "generation": gen,
             "model": str(model),
-            "score": score, 
+            "score": score,
             "elo": elo,
-            "staus": "correct" if model.is_file() else "incorrect"
+            "time": duration,
+            "status": "correct" if model.is_file() else "incorrect"
         })
-        return candidates[:limit]
+    return candidates[:limit]
 
 
 def _train_generation(generation_dir: Path) -> dict[str, Any]:
@@ -127,12 +128,14 @@ def _train_generation(generation_dir: Path) -> dict[str, Any]:
 
 
 def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str, Any]) -> dict[str, Any]:
-    elo = score = None
-    for line in str(aggregate.get("model_score_history") or "").splitlines():
+    elo = score = duration = None
+    lines = str(aggregate.get("model_score_history") or "").splitlines()
+    for line in lines[1:]:  # lines[0] is the header row
         fields = line.split(";")
-        if len(fields) >= 3 and fields[0] == str(generation):
+        if len(fields) >= 4 and fields[0] == str(generation):
             elo = None if fields[1] == "None" else float(fields[1])
             score = None if fields[2] == "None" else float(fields[2])
+            duration = None if fields[3] == "None" else float(fields[3])
             break
 
     return{
@@ -140,7 +143,9 @@ def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str,
         "parent_id": None if generation == 0 else f"model-{generation-1}",
         "generation": generation,
         "model": str(model),
+        "score": score,
         "elo": elo,
+        "time": duration,
         "status": "correct"
     }    
 

@@ -223,6 +223,22 @@ def _terminal_width(target: TextIO) -> int:
         return shutil.get_terminal_size((80, 20)).columns
     return 80
 
+def _format_duration(value: object) -> str:
+    if value is None:
+        return "-"
+    try:
+        total_seconds = max(0, round(float(value)))
+    except (TypeError, ValueError):
+        return str(value)
+
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
 def _crop(value: object, width: int) -> str:
     text = str(value)
     if len(text) <= width:
@@ -332,7 +348,7 @@ def print_gen_results(
             check_val(row.get("score", "-")),
             check_val(row.get("cost", "-")),
             check_val(row.get("elo", "-")),
-            check_val(row.get("time", "-"))
+            _format_duration(row.get("time"))
 
         ) for row in rows
     ]
