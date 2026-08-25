@@ -170,10 +170,12 @@ def run_evolution(config: RunConfig) -> Path:
         available = integrations.fetch_candidates(limit=config.parents)
         parents = available[:config.parents]
         print_gen_header(generation=generation)
-        print_gen_metadata(generation=generation, name = run_dir.name, 
+        print_gen_metadata(generation=generation, name = run_dir.name,
                            parent_ids=[str(parent.get("id", "-")) for parent in parents], mode = config.mode)
         log.info("Generation %s/%s", generation, total_generations)
+        log.info("Fetched %s parent candidate(s)", len(parents))
         evolution_models = integrations.select_models_with_bandit(models=validated_models, count=5)
+        log.info("Evolving proposals using models: %s", ", ".join(evolution_models))
         proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
         if not proposals:
             log.warning("No evolution proposals for generation %s - stopping", generation)
@@ -183,7 +185,9 @@ def run_evolution(config: RunConfig) -> Path:
         for proposal in proposals:
             proposal.setdefault("generation", generation)
             proposal.setdefault("generation_dir", str(gen_dir))
+        log.info("Training & evaluating %s proposal(s) (workers=%s)...", len(proposals), config.workers)
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
+        log.info("Judging %s evaluated candidate(s)...", len(evaluated))
         accepted = integrations.judge_candidates(candidates=evaluated)
         lineage.extend(accepted)
 
@@ -212,6 +216,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))
             })
 
+        log.info("Generation %s complete — %s/%s candidate(s) accepted", generation, len(accepted), len(evaluated))
         print_gen_results(result_rows, generation=generation)
         _write_json(gen_dir / "metrics.json", {
             "generation": generation,

@@ -1,27 +1,33 @@
+import logging
 import os
 
 from utils import RESULTS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def run_aggregate_data(gen_id: int) -> dict:
     #Path to this generation's folder
     gen_folder = os.path.join(RESULTS_DIR, f"gen_{gen_id}")
-
+    checklist = []
 
     # config.yaml: returned as raw text, the caller can parse it if it needs to
     config_path = os.path.join(gen_folder, "config.yaml")
     with open(config_path, "r") as f:
         config_data = f.read()
+    checklist.append("config.yaml")
 
     # algorithm.py: this is Python source code, not data, we just read it as plain text instead of trying to parse it
     algorithm_path = os.path.join(gen_folder, "algorithm.py")
     with open(algorithm_path, "r") as f:
         algorithm_data = f.read()
+    checklist.append("algorithm.py")
 
     # training_logs.txt: returned as raw text
     training_logs_path = os.path.join(gen_folder, "training_logs.txt")
     with open(training_logs_path, "r") as f:
         training_logs_data = f.read()
+    checklist.append("training_logs.txt")
 
     # tournament_table.csv: this lives in shared results/folder, not inside of the gen folder, because it covers ALL generations.
     # ';'-delimited, no header - matches exactly what run_tournament.py writes.
@@ -30,6 +36,7 @@ def run_aggregate_data(gen_id: int) -> dict:
         os.makedirs(RESULTS_DIR, exist_ok=True)
         open(tournament_path, "w").close()
     tournament_data = _read_tournament_table(tournament_path)
+    checklist.append("tournament_table.csv")
 
     # model_score_history.csv: returned as raw text
     score_history_path = os.path.join(RESULTS_DIR, "model_score_history.csv")
@@ -38,6 +45,13 @@ def run_aggregate_data(gen_id: int) -> dict:
         open(score_history_path, "w").close()
     with open(score_history_path, "r") as f:
         score_history_data = f.read()
+    checklist.append("model_score_history.csv")
+
+    logger.info(
+        "[gen %s] aggregating data:\n%s",
+        gen_id,
+        "\n".join(f"  ✔ {name}" for name in checklist),
+    )
 
     return {
         "config": config_data,
