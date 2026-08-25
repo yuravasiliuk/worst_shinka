@@ -87,8 +87,8 @@ def _styled(text: object, color: str, *, enabled: bool) -> str:
 
 def progress_line(label: str, *, label_color: str, generation: int, progress: str, result: str, stream=None) -> None:
     """Writes a status line styled like the CLI's own log lines (colored
-    date/time/level prefix) that overwrites itself in place on a TTY, or
-    prints one plain line per call when redirected to a file/pipe."""
+    date/time/level prefix). Always prints one plain line per call, one
+    below the other, regardless of whether the target is a TTY."""
     target = stream if stream is not None else sys.stderr
     interactive = getattr(target, "isatty", lambda: False)()
     enabled = interactive and not os.getenv("NO_COLOR")
@@ -103,20 +103,14 @@ def progress_line(label: str, *, label_color: str, generation: int, progress: st
         f"{date} {time_} - {level} - {label_text} "
         f"- Generation: {generation}  Progress: {progress}  Result: {result}"
     )
-    if interactive:
-        target.write(f"\r\033[K{line}")
-    else:
-        target.write(line + "\n")
+    target.write(line + "\n")
     target.flush()
 
 
 def progress_done(*, stream=None) -> None:
-    """Ends an in-place progress line so subsequent output starts on a
-    fresh line."""
-    target = stream if stream is not None else sys.stderr
-    if getattr(target, "isatty", lambda: False)():
-        target.write("\n")
-        target.flush()
+    """Kept for backwards compatibility with callers of the old in-place
+    progress line; there is no trailing state to clean up anymore."""
+    del stream
 
 
 def _format_duration(seconds: float) -> str:
