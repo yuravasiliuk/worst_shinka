@@ -7,12 +7,12 @@ from llm.client import get_client_llm
 
 client: OpenAI = get_client_llm()
 # TODO refine prompts (Kalina)
-@dataclass
+
 
 class Judge:
     def evaluate(proposal_1, proposal_2, history):
-        return 0
-
+        return proposal_1, 0, "wszystko git"
+@dataclass
 class BrainstormResult:
     proposal_1: str
     proposal_2: str
@@ -76,17 +76,17 @@ class EvolutionWorkflow:
         for attempt in range(max_judge_retries):
             proposals = self.brainstormer.run_brainstorming(parents_data, rejection_reason)
             
-            judge_decision = self.judge.evaluate(
+            judge_decision, decision, text = self.judge.evaluate(
                 proposal_1=proposals.proposal_1, 
                 proposal_2=proposals.proposal_2,
                 history=proposals.debate_history
             )
             
-            if judge_decision == 0:
-                print(f"Success! Judge selected proposal {judge_decision.selected_index}")
-                return judge_decision.selected_code
+            if decision == 0:
+                print(f"Success! Judge selected proposal")
+                return judge_decision
             
-            print(f"Looping back. Rejection reason: {judge_decision.reason}")
-            rejection_reason = judge_decision.reason
+            print(f"Looping back. Rejection reason: {text}")
+            rejection_reason = text
 
         raise RuntimeError("Failed to satisfy Judge within max retries.")
