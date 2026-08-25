@@ -226,7 +226,7 @@ def validate_openrouter_setup(
 ) -> Path:
     api_key = get_openrouter_api_key()
     if not api_key:
-        raise OpenRouterError("‼️ OpenRouter API key is missing.")
+        raise OpenRouterError("‼️ OpenRouter API key is missing; Run: `worst-shinka config`")
 
     key_payload = _connect_with_retries(api_key)
     key_data = key_payload.get("data") if isinstance(key_payload.get("data"), dict) else {}

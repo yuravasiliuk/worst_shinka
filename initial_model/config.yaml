@@ -1,0 +1,5 @@
+hidden_layers: [64, 64]
+gamma: 0.99
+epsilon_start: 1.0
+epsilon_end: 0.05
+epsilon_decay_episodes: 50
