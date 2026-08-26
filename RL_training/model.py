@@ -139,12 +139,17 @@ def median_reward(rewards):
 
 
     def median_reward(self):
-        """Return the median reward collected during training."""
+        """Return and log the median reward collected during training."""
         if not self.reward_history:
-            return 0.0
-        rewards = sorted(self.reward_history)
-        n = len(rewards)
-        mid = n // 2
-        if n % 2:
-            return rewards[mid]
-        return (rewards[mid - 1] + rewards[mid]) / 2.0
+            median = 0.0
+        else:
+            rewards = sorted(self.reward_history)
+            n = len(rewards)
+            mid = n // 2
+            if n % 2:
+                median = rewards[mid]
+            else:
+                median = (rewards[mid - 1] + rewards[mid]) / 2.0
+
+        print(f"MEDIAN REWARD: {median}")
+        return median
