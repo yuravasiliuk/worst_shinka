@@ -18,6 +18,22 @@ class BrainstormResult:
     proposal_2: str
     debate_history: List[Dict[str, str]]
 
+
+
+SYS_PROMPT_BRAINSTRORMER_TEMPLATE = """
+You are {role}. Focus on {metrics}.
+"""
+
+B1_MSG_TEMPLATE = """
+{context}
+Propose an improved algorithmic strategy combining the best of these parents.
+"""
+
+B2_MSG_TEMPLATE = """
+{context}
+Propose a distinct alternative strategy combining the best of these parents."
+"""
+
 class BrainstormingPipeline:
     def __init__(self, model_a: str, model_b: str,config_path, max_debate_rounds: int = 2):
         self.model_a = model_a
@@ -57,12 +73,19 @@ class BrainstormingPipeline:
             context += f"\nCRITICAL: Previous proposals were REJECTED by Judge for: {judge_rejection_reason}. Address this!"
 
         debate_history = []
+     
+        b1_prompt = B1_MSG_TEMPLATE.format(contex=context)
+        idea_1 = self._call_llm(
+            self.model_a,
+            SYS_PROMPT_BRAINSTRORMER_TEMPLATE.format(role='Expert Brainstormer 1', metrics='algorithmic efficiency'),
+            b1_prompt,
+            )
 
-        b1_prompt = f"{context}\nPropose an improved algorithmic strategy combining the best of these parents."
-        idea_1 = self._call_llm(self.model_a, "You are Expert Brainstormer 1. Focus on algorithmic efficiency.", b1_prompt)
-        
-        b2_prompt = f"{context}\nPropose a distinct alternative strategy combining the best of these parents."
-        idea_2 = self._call_llm(self.model_b, "You are Expert Brainstormer 2. Focus on code simplicity and robust edge-case handling.", b2_prompt)
+        b2_prompt = B2_MSG_TEMPLATE.format(context=context)
+        idea_2 = self._call_llm(
+            self.model_b,
+            SYS_PROMPT_BRAINSTRORMER_TEMPLATE.format(role='Expert Brainstormer 2', metrics='code simplicity and robust edge-case handling'),
+            b2_prompt)
         
         debate_history.extend([{"agent": "Brainstormer 1", "content": idea_1}, {"agent": "Brainstormer 2", "content": idea_2}])
 
