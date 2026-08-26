@@ -45,13 +45,14 @@ def _rl_modules() -> dict[str, Any]:
     utils.MODEL_SCORE_HISTORY_PATH = str(run_dir / "model_score_history.csv")
 
     modules: dict[str, Any] = {"utils": utils}
-    for name in ("run_training", "run_tournament", "run_aggregate_data", "run_play", "run_reset"):
+    for name in ("run_training", "run_tournament", "run_aggregate_data", "run_play", "run_reset", 'train'):
         modules[name] = importlib.import_module(name)
     modules["run_training"].RESULTS_DIR = str(run_dir)
     modules["run_tournament"].RESULTS_DIR = str(run_dir)
     modules["run_tournament"].TOURNAMENT_TABLE_PATH = str(run_dir / "tournament_table.csv")
     modules["run_aggregate_data"].RESULTS_DIR = str(run_dir)
     modules["run_reset"].RESULTS_DIR = str(run_dir)
+    modules["train"].RESULTS_DIR = str(run_dir)
     return modules
 
 

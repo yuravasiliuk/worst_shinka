@@ -6,7 +6,7 @@ import statistics as stats
 #maybe to create a file with structure: (model_id, generation_number, number_children, performance)
 
 class Selector_Parents():
-    def __init__(self, lmbd):
+    def __init__(self, lmbd=1.0):
         self.lmbd = lmbd 
         self.N = {} #dictionary that keeps track of number of children for each model_id
 

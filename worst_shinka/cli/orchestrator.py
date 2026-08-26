@@ -1,21 +1,26 @@
 from __future__ import annotations
-
+print("orchestrator")
 import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
+print("orchestrator 1")
 from .config import RunConfig
 from .terminal import print_startup_info, print_gen_header, print_gen_metadata, print_gen_results
 from . import integrations
+print("orchestrator 2")
 from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
+print("orchestrator 2.1")
 from worst_shinka.brainstorming_system.brainstorm import BrainstormingPipeline, BrainstormResult, EvolutionWorkflow
+print("orchestrator 2.3")
 from worst_shinka.llm.selector import Selector_LLM
+print("orchestrator 3")
 import os 
-from judge import Judge
-from RL_training.train import train
+import sys
+from pathlib import Path
 
+print("orchestrator 4")
 log = logging.getLogger(__name__)
 
 class _PathEncoder(json.JSONEncoder):
@@ -185,6 +190,8 @@ def run_evolution(config: RunConfig) -> Path:
 
         # TODO TUTAJ KALINKA -----------------------------------------------
         config_path = os.path.join(config.results_dir, f'gen_{generation}')
+        rl_modules = integrations._rl_modules()
+        train = rl_modules["train"].train
         workflow = EvolutionWorkflow(models=evolution_models, gen_id=generation, config_path=os.path.join(config_path, "brainstorming"), train_function=train)
         result = workflow.execute_crossover()
         proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)

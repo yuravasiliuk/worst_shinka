@@ -47,10 +47,10 @@ class Selector_LLM():
                 self.probabilities[index_1] = new_prob_1
                 self.probabilities[index_2] = new_prob_2
 
-reader = Reader_Model_Pool()
-reader.read_model_ids_from_yaml("Test")
-model_ids = reader.get_model_ids()
-print("fetched valid model ids: ", model_ids)
-selector = Selector_LLM(model_ids, 0.2, 0.8, 0.05)
-selected = selector.select_models()
-print("selected two models for the first iteration: ", selected)
+# reader = Reader_Model_Pool()
+# reader.read_model_ids_from_yaml("Test")
+# model_ids = reader.get_model_ids()
+# print("fetched valid model ids: ", model_ids)
+# selector = Selector_LLM(model_ids, 0.2, 0.8, 0.05)
+# selected = selector.select_models()
+# print("selected two models for the first iteration: ", selected)
