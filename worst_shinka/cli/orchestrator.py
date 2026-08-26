@@ -10,6 +10,11 @@ from .config import RunConfig
 from .terminal import print_startup_info, print_gen_header, print_gen_metadata, print_gen_results
 from . import integrations
 from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
+from worst_shinka.brainstorming_system.brainstorm import BrainstormingPipeline, BrainstormResult, EvolutionWorkflow
+from worst_shinka.llm.selector import Selector_LLM
+import os 
+from judge import Judge
+from RL_training.train import train
 
 log = logging.getLogger(__name__)
 
@@ -160,7 +165,7 @@ def run_evolution(config: RunConfig) -> Path:
                 generation,
                 total_generations,
             )
-
+    llm_selector = Selector_LLM(validated_models)
     for generation in range(first_generation, first_generation + config.generations):
         
         gen_dir = run_dir / f"gen_{generation}"
@@ -173,9 +178,15 @@ def run_evolution(config: RunConfig) -> Path:
         print_gen_metadata(generation=generation, name = run_dir.name,
                            parent_ids=[str(parent.get("id", "-")) for parent in parents], mode = config.mode)
         log.info("Generation %s/%s", generation, total_generations)
+        # jednak tutaj skarbie
         log.info("Fetched %s parent candidate(s)", len(parents))
-        evolution_models = integrations.select_models_with_bandit(models=validated_models, count=5)
-        log.info("Evolving proposals using models: %s", ", ".join(evolution_models))
+        evolution_models = llm_selector.select_models()
+        log.info("Evolving proposals using models: %s", ", ".join(evolution_models)) 
+
+        # TODO TUTAJ KALINKA -----------------------------------------------
+        config_path = os.path.join(config.results_dir, f'gen_{generation}')
+        workflow = EvolutionWorkflow(models=evolution_models, gen_id=generation, config_path=os.path.join(config_path, "brainstorming"), train_function=train)
+        result = workflow.execute_crossover()
         proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
         if not proposals:
             log.warning("No evolution proposals for generation %s - stopping", generation)
@@ -215,7 +226,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "complexity": candidate.get("complexity", "-"),
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))
             })
-
+        # TUTAJ KONIEC KALINKA ---------------------------------------
         log.info("Generation %s complete — %s/%s candidate(s) accepted", generation, len(accepted), len(evaluated))
         print_gen_results(result_rows, generation=generation)
         _write_json(gen_dir / "metrics.json", {
