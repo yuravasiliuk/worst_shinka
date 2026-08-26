@@ -30,6 +30,7 @@ class DQLModel:
         )
 
         self.loss_function = nn.MSELoss()
+        self.reward_history = []
 
     def predict(self, state):
         """Return Q-values for the given state."""
@@ -53,6 +54,7 @@ class DQLModel:
         gamma=0.99
     ):
         """Perform one DQN training step."""
+        self.reward_history.append(float(reward))
 
         state_tensor = torch.tensor(
             state,
@@ -121,3 +123,28 @@ class DQLModel:
         self.network.load_state_dict(
             checkpoint["model_state"]
         )
+def median_reward(rewards):
+    """Return the median reward obtained by a candidate model."""
+    if not rewards:
+        return 0.0
+
+    sorted_rewards = sorted(float(r) for r in rewards)
+    n = len(sorted_rewards)
+    mid = n // 2
+
+    if n % 2:
+        return sorted_rewards[mid]
+
+    return (sorted_rewards[mid - 1] + sorted_rewards[mid]) / 2.0
+
+
+    def median_reward(self):
+        """Return the median reward collected during training."""
+        if not self.reward_history:
+            return 0.0
+        rewards = sorted(self.reward_history)
+        n = len(rewards)
+        mid = n // 2
+        if n % 2:
+            return rewards[mid]
+        return (rewards[mid - 1] + rewards[mid]) / 2.0
