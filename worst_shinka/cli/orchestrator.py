@@ -182,17 +182,17 @@ def run_evolution(config: RunConfig) -> Path:
         log.info("Evolving proposals using models: %s", ", ".join(evolution_models)) 
 
         
-        config_path = os.path.join(config.results_dir, f'{config.name}/gen_{generation}')
-        gen0_config_path = os.path.join(config.results_dir, config.name, "gen_0", "config.yaml")
+        config_path = run_dir / f"gen_{generation}"
+        gen0_config_path = run_dir / "gen_0" / "config.yaml"
         rl_modules = integrations._rl_modules()
         train = rl_modules["train"].train
         workflow = EvolutionWorkflow(models=evolution_models,
                                      gen_id=generation,
-                                     history_path=os.path.join(config_path, "brainstorming"),
-                                     train_config_path=gen0_config_path,
+                                     history_path=str(config_path / "brainstorming"),
+                                     train_config_path=str(gen0_config_path),
                                      train_function=train,
                                      max_debate_rounds=1)
-        parent_data = integrations.get_parents_data(os.path.join(config.results_dir, config.name))
+        parent_data = integrations.get_parents_data(run_dir)
         parent_selector = Selector_Parents()
         performances = [data["metrics"]["score"] for data in parent_data]
         ids = [i for i in range(len(performances))]
@@ -202,10 +202,10 @@ def run_evolution(config: RunConfig) -> Path:
             selected_parents = parent_selector.select_parent_ids(NUMBER_PARENTS, ids, performances)
         result = workflow.execute_crossover([parent_data[i] for i in selected_parents])
         if not result:
-            log.warning("No evolution proposals for generation %s - stopping", generation)
+            log.warning("No accepted evolution proposal for generation %s - continuing", generation)
             if not any(gen_dir.iterdir()):
                 gen_dir.rmdir()
-            break
+            continue
         (gen_dir / "algorithm.py").write_text(result["winner_code"], encoding="utf-8")
         shutil.copy2(gen0_config_path, gen_dir / "config.yaml")
         proposals = [{"generation": generation, "generation_dir": str(gen_dir)}]
