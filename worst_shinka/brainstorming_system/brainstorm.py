@@ -35,6 +35,24 @@ B2_MSG_TEMPLATE = """
 Propose a distinct alternative strategy combining the best of these parents."
 """
 
+SYS_PROMPT_CODE_CRITIC = """
+You are a Harsh Code Critic.
+
+"""
+
+SYS_PROMPT_REFINE = """
+Refine your approach based on the critique.
+"""
+
+REFINE_IDEA_MSG = """
+Your Idea:
+{idea}
+
+Critique:
+{critique}
+"""
+
+
 class BrainstormingPipeline:
     def __init__(self, model_a: str, model_b: str,config_path, max_debate_rounds: int = 2):
         self.model_a = model_a
@@ -106,13 +124,15 @@ class BrainstormingPipeline:
 
         for round_num in range(self.max_debate_rounds):
             critic_prompt = f"Parent Data:\n{context}\n\nProposed Ideas:\n1: {idea_1}\n2: {idea_2}\nIdentify trade-offs, potential bugs, or performance bottlenecks in both."
-            critique = self._call_llm(self.model_a, "You are a Harsh Code Critic.", critic_prompt) # we choose model a - to be think through
+            critique = self._call_llm(self.model_a, SYS_PROMPT_CODE_CRITIC, critic_prompt) # we choose model a - to be think through
             debate_history.append({"agent": f"Critic (Round {round_num+1})", "content": critique})
-            self.append_turn_to_jsonl(critique, path)
-            idea_1 = self._call_llm(self.model_a, "Refine your approach based on the critique.", f"Your Idea:\n{idea_1}\nCritique:\n{critique}")
-            self.append_turn_to_jsonl(idea_1, path)
-            idea_2 = self._call_llm(self.model_b, "Refine your approach based on the critique.", f"Your Idea:\n{idea_2}\nCritique:\n{critique}")
-            self.append_turn_to_jsonl(idea_2, path)
+
+            idea_1 = self._call_llm(self.model_a, SYS_PROMPT_REFINE, REFINE_IDEA_MSG.format(idea=idea_1, critique=critique))
+            idea_2 = self._call_llm(self.model_b, SYS_PROMPT_REFINE, REFINE_IDEA_MSG.format(idea=idea_2, critique=critique))
+
+            # consider the case when they found agreement faster than self.max_debate_rounds
+            # break the loop.
+
         prop1_code = self._call_llm(self.model_a, "Output clean Python code for Proposal 1 based on final consensus.", idea_1)
         prop2_code = self._call_llm(self.model_b, "Output clean Python code for Proposal 2 based on final consensus.", idea_2)
         self.save_debate_to_json(debate_history, os.path.join(self.path, f"debate_history/debate_{attempt}.json"))
