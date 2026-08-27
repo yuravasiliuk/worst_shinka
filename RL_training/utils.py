@@ -22,9 +22,10 @@ MAX_CYCLES = _global_config["training"]["max_steps_per_episode"]
 RESULTS_DIR = os.environ.get("WORST_SHINKA_RESULTS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results"))
 TOURNAMENT_TABLE_PATH = os.path.join(RESULTS_DIR, "tournament_table.csv")
 MODEL_SCORE_HISTORY_PATH = os.path.join(RESULTS_DIR, "model_score_history.csv")
-MODEL_SCORE_HISTORY_HEADER = "generation;elo;score;time_seconds"
+MODEL_SCORE_HISTORY_HEADER = "generation;elo;average_training_score;score;time_seconds"
 RAM_GAMES = {"first_0": 71, "second_0": 72}
 ELO_BASELINE = 1200
+MATCHES_PER_SCORE_EVALUATION = _global_config["scoring"]["matches_per_evaluation"]
 
 # Same palette as worst_shinka/cli/terminal.py's ColoredLogFormatter, kept as
 # a local copy (not imported) so RL_training stays independent of worst_shinka.
@@ -52,7 +53,7 @@ def _load_model(path):
 def _load_model_score_history():
     # Files created before the header column existed (or pre-touched empty by
     # worst_shinka's configure_run) have no header line yet - (re)write one via
-    # _save_model_score_history so every row after this point is 4 columns.
+    # _save_model_score_history so every row after this point is 5 columns.
     if not os.path.isfile(MODEL_SCORE_HISTORY_PATH) or os.path.getsize(MODEL_SCORE_HISTORY_PATH) == 0:
         _save_model_score_history([])
         return []
@@ -65,6 +66,7 @@ def _load_model_score_history():
             None if r[1] == "None" else float(r[1]),
             None if r[2] == "None" else float(r[2]),
             None if r[3] == "None" else float(r[3]),
+            None if r[4] == "None" else float(r[4]),
         ]
         for r in rows
     ]
@@ -74,10 +76,11 @@ def _save_model_score_history(rows):
     os.makedirs(RESULTS_DIR, exist_ok=True)
     with open(MODEL_SCORE_HISTORY_PATH, "w") as f:
         f.write(MODEL_SCORE_HISTORY_HEADER + "\n")
-        for gen_id, elo, avg, duration in rows:
+        for gen_id, elo, avg, score, duration in rows:
             f.write(
                 f"{gen_id};{'None' if elo is None else elo};"
-                f"{'None' if avg is None else avg};{'None' if duration is None else duration}\n"
+                f"{'None' if avg is None else avg};{'None' if score is None else score};"
+                f"{'None' if duration is None else duration}\n"
             )
 
 
