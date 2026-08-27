@@ -19,7 +19,7 @@ if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 MAX_CYCLES = _global_config["training"]["max_steps_per_episode"]
-RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", _global_config["results_dir"])
+RESULTS_DIR = os.environ.get("WORST_SHINKA_RESULTS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results"))
 TOURNAMENT_TABLE_PATH = os.path.join(RESULTS_DIR, "tournament_table.csv")
 MODEL_SCORE_HISTORY_PATH = os.path.join(RESULTS_DIR, "model_score_history.csv")
 MODEL_SCORE_HISTORY_HEADER = "generation;elo;score;time_seconds"
