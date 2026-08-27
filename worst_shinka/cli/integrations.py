@@ -7,6 +7,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Any
+import json
 
 RL_RESULTS_ENV = "WORST_SHINKA_RESULTS_DIR"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -275,6 +276,39 @@ def _play_human_vs_model(model_path: Path) -> None:
     finally:
         env.close()
         pygame.quit()
+def get_parents_data(run_dir: Path | str) -> list[dict]:
+    run_dir = Path(run_dir)
+    parents_data = []
+    
+    for gen_dir in sorted(run_dir.glob("gen_*")):
+        if not gen_dir.is_dir():
+            continue
+
+        algo_file = gen_dir / "algorithm.py"
+        metrics_file = gen_dir / "metrics.json"
+
+        if (
+            not algo_file.is_file() 
+            or algo_file.stat().st_size == 0 
+            or not metrics_file.is_file() 
+            or metrics_file.stat().st_size == 0
+        ):
+            continue
+
+        try:
+            algo_code = algo_file.read_text(encoding="utf-8")
+            
+            metrics_data = json.loads(metrics_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        parents_data.append({
+            "gen": gen_dir.name,
+            "code": algo_code,
+            "metrics": metrics_data
+        })
+
+    return parents_data
 
 def reset_run(*, run_dir: Path) -> None:
     resolved = configure_run(run_dir)

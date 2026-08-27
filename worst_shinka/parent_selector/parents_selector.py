@@ -19,7 +19,7 @@ class Selector_Parents():
         
     def calculate_s(self, performances):
         alpha_0 = stats.median(performances)
-        s = 1 / (1 + np.exp(-1*self.lmbd*(performances - alpha_0)))
+        s = 1 / (1 + np.exp(-1*self.lmbd*(np.array(performances) - alpha_0)))
         return s
 
     def calculate_h(self, ids):
@@ -46,7 +46,7 @@ class Selector_Parents():
         performances - scores of parents, corresponding to ids
         """
         s = self.calculate_s(performances)
-        h = self.calculate_h()
+        h = self.calculate_h(ids)
         w = self.calculate_w(s, h)
         p = self.calculate_p(w)
 

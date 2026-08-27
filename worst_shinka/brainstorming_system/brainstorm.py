@@ -7,7 +7,8 @@ from worst_shinka.llm.client import get_client_llm
 from .evaluation_adapter import BrainstormingEvaluationAdapter
 from worst_shinka.judge import Judge
 from typing import Callable
-import datetime
+from datetime import datetime
+
 
 client: OpenAI = get_client_llm()
 # TODO refine prompts (Kalina)
@@ -49,8 +50,11 @@ class BrainstormingPipeline:
             ]
         )
         return response.choices[0].message.content or ""
-    def save_debate_to_json(debate_history: list[dict], filepath):
-        """Saves raw debate history list directly to a JSON file."""
+    def save_debate_to_json(self, debate_history: list[dict], filepath):
+        directory = os.path.dirname(filepath)
+            
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         payload = {
             "timestamp": datetime.now().isoformat(),
             "total_turns": len(debate_history),
@@ -61,7 +65,18 @@ class BrainstormingPipeline:
             json.dump(payload, f, indent=4, ensure_ascii=False)
             
         print(f"Debate history successfully saved to {filepath}")
-
+    def append_turn_to_jsonl(self, turn_data: dict, filepath: str = "debate_stream.jsonl"):
+        directory = os.path.dirname(filepath)
+    
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        payload = {
+            "timestamp": datetime.now().isoformat(),
+            "content": turn_data
+        }
+        
+        with open(filepath, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
     def run_brainstorming(
         self, 
         parents_data: List[Dict], 
@@ -73,30 +88,31 @@ class BrainstormingPipeline:
             context += f"\nCRITICAL: Previous proposals were REJECTED by Judge for: {judge_rejection_reason}. Address this!"
 
         debate_history = []
-     
-        b1_prompt = B1_MSG_TEMPLATE.format(contex=context)
+        path = os.path.join(self.path, f"debate_history/debate_check_{attempt}.json")
+        b1_prompt = B1_MSG_TEMPLATE.format(context=context)
         idea_1 = self._call_llm(
             self.model_a,
             SYS_PROMPT_BRAINSTRORMER_TEMPLATE.format(role='Expert Brainstormer 1', metrics='algorithmic efficiency'),
             b1_prompt,
             )
-
+        self.append_turn_to_jsonl(idea_1, path)
         b2_prompt = B2_MSG_TEMPLATE.format(context=context)
         idea_2 = self._call_llm(
             self.model_b,
             SYS_PROMPT_BRAINSTRORMER_TEMPLATE.format(role='Expert Brainstormer 2', metrics='code simplicity and robust edge-case handling'),
             b2_prompt)
-        
+        self.append_turn_to_jsonl(idea_2, path)
         debate_history.extend([{"agent": "Brainstormer 1", "content": idea_1}, {"agent": "Brainstormer 2", "content": idea_2}])
 
         for round_num in range(self.max_debate_rounds):
             critic_prompt = f"Parent Data:\n{context}\n\nProposed Ideas:\n1: {idea_1}\n2: {idea_2}\nIdentify trade-offs, potential bugs, or performance bottlenecks in both."
             critique = self._call_llm(self.model_a, "You are a Harsh Code Critic.", critic_prompt) # we choose model a - to be think through
             debate_history.append({"agent": f"Critic (Round {round_num+1})", "content": critique})
-
+            self.append_turn_to_jsonl(critique, path)
             idea_1 = self._call_llm(self.model_a, "Refine your approach based on the critique.", f"Your Idea:\n{idea_1}\nCritique:\n{critique}")
+            self.append_turn_to_jsonl(idea_1, path)
             idea_2 = self._call_llm(self.model_b, "Refine your approach based on the critique.", f"Your Idea:\n{idea_2}\nCritique:\n{critique}")
-
+            self.append_turn_to_jsonl(idea_2, path)
         prop1_code = self._call_llm(self.model_a, "Output clean Python code for Proposal 1 based on final consensus.", idea_1)
         prop2_code = self._call_llm(self.model_b, "Output clean Python code for Proposal 2 based on final consensus.", idea_2)
         self.save_debate_to_json(debate_history, os.path.join(self.path, f"debate_history/debate_{attempt}.json"))

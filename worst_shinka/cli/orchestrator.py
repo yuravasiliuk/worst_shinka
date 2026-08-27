@@ -1,28 +1,21 @@
 from __future__ import annotations
-print("orchestrator")
 import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-print("orchestrator 1")
 from .config import RunConfig
 from .terminal import print_startup_info, print_gen_header, print_gen_metadata, print_gen_results
 from . import integrations
-print("orchestrator 2")
 from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
-print("orchestrator 2.1")
 from worst_shinka.brainstorming_system.brainstorm import BrainstormingPipeline, BrainstormResult, EvolutionWorkflow
-print("orchestrator 2.3")
 from worst_shinka.llm.selector import Selector_LLM
-print("orchestrator 3")
 import os 
 import sys
 from pathlib import Path
-
-print("orchestrator 4")
+from worst_shinka.parent_selector.parents_selector import Selector_Parents
 log = logging.getLogger(__name__)
-
+NUMBER_PARENTS = 2
 class _PathEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Any:
         if isinstance(obj, Path):
@@ -127,7 +120,6 @@ def run_evolution(config: RunConfig) -> Path:
         _write_json(lineage_path, {"nodes": lineage})
         generations = [0]
         created_initial_gen = True
-
     if created_initial_gen:
         initial = lineage[0] if lineage else {}
         initial_status = initial.get("status")
@@ -183,26 +175,34 @@ def run_evolution(config: RunConfig) -> Path:
         print_gen_metadata(generation=generation, name = run_dir.name,
                            parent_ids=[str(parent.get("id", "-")) for parent in parents], mode = config.mode)
         log.info("Generation %s/%s", generation, total_generations)
-        # jednak tutaj skarbie
+        # TODO HERE - integrate with the rest
         log.info("Fetched %s parent candidate(s)", len(parents))
         evolution_models = llm_selector.select_models()
         log.info("Evolving proposals using models: %s", ", ".join(evolution_models)) 
 
-        # TODO TUTAJ KALINKA -----------------------------------------------
-        config_path = os.path.join(config.results_dir, f'gen_{generation}')
+        
+        config_path = os.path.join(config.results_dir, f'{config.name}/gen_{generation}')
         rl_modules = integrations._rl_modules()
         train = rl_modules["train"].train
-        workflow = EvolutionWorkflow(models=evolution_models, gen_id=generation, config_path=os.path.join(config_path, "brainstorming"), train_function=train)
-        result = workflow.execute_crossover()
-        proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
-        if not proposals:
+        workflow = EvolutionWorkflow(models=evolution_models, gen_id=generation, config_path=os.path.join(config_path, "brainstorming"), train_function=train, max_debate_rounds=1)
+        parent_data = integrations.get_parents_data(os.path.join(config.results_dir, config.name))
+        parent_selector = Selector_Parents()
+        performances = [data["metrics"]["score"] for data in parent_data]
+        ids = [i for i in range(len(performances))]
+        if NUMBER_PARENTS > len(performances):
+            selected_parents = parent_selector.select_parent_ids(len(performances), ids, performances)
+        else:
+            selected_parents = parent_selector.select_parent_ids(NUMBER_PARENTS, ids, performances)
+        result = workflow.execute_crossover([parent_data[i] for i in selected_parents])
+        # proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
+        if not result:
             log.warning("No evolution proposals for generation %s - stopping", generation)
             if not any(gen_dir.iterdir()):
                 gen_dir.rmdir()
             break
-        for proposal in proposals:
-            proposal.setdefault("generation", generation)
-            proposal.setdefault("generation_dir", str(gen_dir))
+        # for proposal in proposals:
+        #     proposal.setdefault("generation", generation)
+        #     proposal.setdefault("generation_dir", str(gen_dir))
         log.info("Training & evaluating %s proposal(s) (workers=%s)...", len(proposals), config.workers)
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
         log.info("Judging %s evaluated candidate(s)...", len(evaluated))
@@ -233,7 +233,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "complexity": candidate.get("complexity", "-"),
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))
             })
-        # TUTAJ KONIEC KALINKA ---------------------------------------
+        # UNTIL HERE
         log.info("Generation %s complete — %s/%s candidate(s) accepted", generation, len(accepted), len(evaluated))
         print_gen_results(result_rows, generation=generation)
         _write_json(gen_dir / "metrics.json", {
