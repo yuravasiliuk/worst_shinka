@@ -48,7 +48,7 @@ def _rl_modules() -> dict[str, Any]:
     utils.MODEL_SCORE_HISTORY_PATH = str(run_dir / "model_score_history.csv")
 
     modules: dict[str, Any] = {"utils": utils}
-    for name in ("run_training", "run_tournament", "run_aggregate_data", "run_play", "run_reset"):
+    for name in ("run_training", "run_tournament", "run_score_evaluation", "run_aggregate_data", "run_play", "run_reset"):
         modules[name] = importlib.import_module(name)
     modules["run_training"].RESULTS_DIR = str(run_dir)
     modules["run_tournament"].RESULTS_DIR = str(run_dir)
@@ -96,13 +96,14 @@ def prepare_initial_generation(*, source_dir: Path, generation_dir: Path) -> Non
 def fetch_candidates(*, limit: int) -> list[dict[str, Any]]:
     rows = _rl_modules()["utils"]._load_model_score_history()
     candidates = []
-    for gen, elo, average_training_score, duration in reversed(rows):
+    for gen, elo, average_training_score, score, duration in reversed(rows):
         model = _require_run() / f"gen_{gen}" / "model.pt"
         candidates.append({
             "id": f"model-{gen}",
             "generation": gen,
             "model": str(model),
             "average_training_score": average_training_score,
+            "score": score,
             "elo": elo,
             "time": duration,
             "status": "correct" if model.is_file() else "incorrect"
@@ -135,20 +136,23 @@ def _train_generation(generation_dir: Path, *, tournament: bool) -> dict[str, An
                 break
         modules["utils"]._save_model_score_history(score_history)
 
+    modules["run_score_evaluation"].run_score_evaluation(gen)
+
     agg = modules["run_aggregate_data"].run_aggregate_data(gen)
 
     return _candidate_from_aggregate(gen, model, agg)
 
 
 def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str, Any]) -> dict[str, Any]:
-    elo = average_training_score = duration = None
+    elo = average_training_score = score = duration = None
     lines = str(aggregate.get("model_score_history") or "").splitlines()
     for line in lines[1:]:  # lines[0] is the header row
         fields = line.split(";")
-        if len(fields) >= 4 and fields[0] == str(generation):
+        if len(fields) >= 5 and fields[0] == str(generation):
             elo = None if fields[1] == "None" else float(fields[1])
             average_training_score = None if fields[2] == "None" else float(fields[2])
-            duration = None if fields[3] == "None" else float(fields[3])
+            score = None if fields[3] == "None" else float(fields[3])
+            duration = None if fields[4] == "None" else float(fields[4])
             break
 
     return{
@@ -157,6 +161,7 @@ def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str,
         "generation": generation,
         "model": str(model),
         "average_training_score": average_training_score,
+        "score": score,
         "elo": elo,
         "time": duration,
         "status": "correct"

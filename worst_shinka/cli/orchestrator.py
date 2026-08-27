@@ -46,6 +46,7 @@ def _initial_lineage(config: RunConfig) -> list[dict[str, Any]]:
         "generation": 0,
         "model": config.initial_model,
         "average_training_score": None,
+        "score": 0.0,
         "status": "initial-placeholder"
     }]
 
@@ -112,6 +113,7 @@ def run_evolution(config: RunConfig) -> Path:
             "generation": 0,
             "status": initial_node.get("status", "initial-placeholder"),
             "average_training_score": initial_node.get("average_training_score"),
+            "score": initial_node.get("score"),
             "elo": initial_node.get("elo")
         }) 
         _write_json(gen_dir / "solutions.json", {"generation": 0, "solutions": lineage})
@@ -130,6 +132,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "generation": 0,
                 "status": initial_status,
                 "average_training_score": initial.get("average_training_score", "-") if initial.get("average_training_score") is not None else "-",
+                "score": initial.get("score", "-") if initial.get("score") is not None else "-",
                 "cost": initial.get("cost", "-"),
                 "elo": initial.get("elo", "-"),
                 "time": initial.get("time", "-")
@@ -214,6 +217,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "generation": generation,
                 "status": status,
                 "average_training_score": candidate.get("average_training_score", ""),
+                "score": candidate.get("score", ""),
                 "cost": candidate_cost if candidate_cost is not None else "-",
                 "complexity": candidate.get("complexity", "-"),
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))

@@ -4,3 +4,5 @@ training:
   max_steps_per_episode: 1000
   max_seconds_per_match: 60
   log_every_n_episodes: 100
+scoring:
+  matches_per_evaluation: 10
