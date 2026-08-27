@@ -11,8 +11,12 @@ dependencies =[
     "numpy",
     "pygame",
     "PyYAML",
-    "torch==2.8.0",
-    "pettingzoo[atari]"
+    "torch==2.11.0",
+    "pettingzoo[atari]",
+    "AutoROM==0.6.1",
+    "AutoROM.accept-rom-license==0.6.1",
+    "python-dotenv",
+    "openrouter"
 ]
 
 [project.scripts]
