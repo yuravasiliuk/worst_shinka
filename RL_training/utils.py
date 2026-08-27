@@ -22,7 +22,7 @@ MAX_CYCLES = _global_config["training"]["max_steps_per_episode"]
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", _global_config["results_dir"])
 TOURNAMENT_TABLE_PATH = os.path.join(RESULTS_DIR, "tournament_table.csv")
 MODEL_SCORE_HISTORY_PATH = os.path.join(RESULTS_DIR, "model_score_history.csv")
-MODEL_SCORE_HISTORY_HEADER = "generation;elo;score;time_seconds"
+MODEL_SCORE_HISTORY_HEADER = "generation;elo;average_training_score;time_seconds"
 RAM_GAMES = {"first_0": 71, "second_0": 72}
 ELO_BASELINE = 1200
 

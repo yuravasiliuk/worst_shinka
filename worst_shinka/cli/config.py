@@ -39,6 +39,7 @@ class RunConfig:
     workers: int = 1
     parents: int = 1
     mode: str = "medium"
+    tournament: bool = False
 
     def validate(self) -> "RunConfig":
         if self.mode not in MODEL_MODES:
