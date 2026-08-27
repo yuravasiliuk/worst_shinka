@@ -10,7 +10,8 @@ from . import integrations
 from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
 from worst_shinka.brainstorming_system.brainstorm import BrainstormingPipeline, BrainstormResult, EvolutionWorkflow
 from worst_shinka.llm.selector import Selector_LLM
-import os 
+import os
+import shutil
 import sys
 from pathlib import Path
 from worst_shinka.parent_selector.parents_selector import Selector_Parents
@@ -182,9 +183,15 @@ def run_evolution(config: RunConfig) -> Path:
 
         
         config_path = os.path.join(config.results_dir, f'{config.name}/gen_{generation}')
+        gen0_config_path = os.path.join(config.results_dir, config.name, "gen_0", "config.yaml")
         rl_modules = integrations._rl_modules()
         train = rl_modules["train"].train
-        workflow = EvolutionWorkflow(models=evolution_models, gen_id=generation, config_path=os.path.join(config_path, "brainstorming"), train_function=train, max_debate_rounds=1)
+        workflow = EvolutionWorkflow(models=evolution_models,
+                                     gen_id=generation,
+                                     history_path=os.path.join(config_path, "brainstorming"),
+                                     train_config_path=gen0_config_path,
+                                     train_function=train,
+                                     max_debate_rounds=1)
         parent_data = integrations.get_parents_data(os.path.join(config.results_dir, config.name))
         parent_selector = Selector_Parents()
         performances = [data["metrics"]["score"] for data in parent_data]
@@ -194,19 +201,18 @@ def run_evolution(config: RunConfig) -> Path:
         else:
             selected_parents = parent_selector.select_parent_ids(NUMBER_PARENTS, ids, performances)
         result = workflow.execute_crossover([parent_data[i] for i in selected_parents])
-        # proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
         if not result:
             log.warning("No evolution proposals for generation %s - stopping", generation)
             if not any(gen_dir.iterdir()):
                 gen_dir.rmdir()
             break
-        # for proposal in proposals:
-        #     proposal.setdefault("generation", generation)
-        #     proposal.setdefault("generation_dir", str(gen_dir))
+        (gen_dir / "algorithm.py").write_text(result["winner_code"], encoding="utf-8")
+        shutil.copy2(gen0_config_path, gen_dir / "config.yaml")
+        proposals = [{"generation": generation, "generation_dir": str(gen_dir)}]
         log.info("Training & evaluating %s proposal(s) (workers=%s)...", len(proposals), config.workers)
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
-        log.info("Judging %s evaluated candidate(s)...", len(evaluated))
-        accepted = integrations.judge_candidates(candidates=evaluated)
+        log.info("Recording %s trained candidate(s)...", len(evaluated))
+        accepted = evaluated
         lineage.extend(accepted)
 
         accepted_ids = [item.get("id") for item in accepted]
@@ -233,14 +239,14 @@ def run_evolution(config: RunConfig) -> Path:
                 "complexity": candidate.get("complexity", "-"),
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))
             })
-        # UNTIL HERE
         log.info("Generation %s complete — %s/%s candidate(s) accepted", generation, len(accepted), len(evaluated))
         print_gen_results(result_rows, generation=generation)
+        winner_candidate = evaluated[0] if evaluated else {}
         _write_json(gen_dir / "metrics.json", {
             "generation": generation,
-            "proposals": len(proposals),
-            "evaluated": len(evaluated),
-            "accepted": len(accepted),
+            "status": winner_candidate.get("status", "pending"),
+            "score": winner_candidate.get("score"),
+            "elo": winner_candidate.get("elo"),
         })
         _write_json(gen_dir / "solutions.json", {
             "generation": generation,
@@ -251,6 +257,13 @@ def run_evolution(config: RunConfig) -> Path:
         })
         _write_json(gen_dir / "lineage.json", {"nodes": lineage})
         _write_json(lineage_path, {"nodes": lineage})
+
+        who_won = 1 if result["winner_id"] == "proposal_1" else 2
+        llm_selector.update_probabilities(evolution_models[0], evolution_models[1], who_won)
+        log.info(
+            "Updated model selection probabilities (winner: %s)",
+            evolution_models[0] if who_won == 1 else evolution_models[1],
+        )
 
     manifest.update({
         "status": "integration-placeholders-completed",

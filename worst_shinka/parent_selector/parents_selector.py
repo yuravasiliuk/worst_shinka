@@ -50,7 +50,7 @@ class Selector_Parents():
         w = self.calculate_w(s, h)
         p = self.calculate_p(w)
 
-        selected_parent_ids = np.random.choice(ids, size = k, replace = False, p = p)
+        selected_parent_ids = np.random.choice(ids, size = k, replace = False, p = p).tolist()
         self.update_N(selected_parent_ids)
 
         return selected_parent_ids

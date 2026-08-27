@@ -5,15 +5,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-try:
-    from RL_training.utils import MAX_CYCLES, RAM_GAMES, _load_model
-except (ImportError, KeyError):
-    MAX_CYCLES = 10_000
-    RAM_GAMES = {"first_0": 13, "second_0": 14}
+import importlib.util
+from pathlib import Path
 
-    def _load_model(path):
-        raise RuntimeError("Model loading is unavailable.")
+def _load_rl_training_utils():
+    utils_path = Path(__file__).resolve().parents[2] / "RL_training" / "utils.py"
+    spec = importlib.util.spec_from_file_location("worst_shinka._rl_training_utils", utils_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
+_rl_utils = _load_rl_training_utils()
+MAX_CYCLES = _rl_utils.MAX_CYCLES
+RAM_GAMES = _rl_utils.RAM_GAMES
+_load_model = _rl_utils._load_model
 
 @dataclass
 class JudgeConfig:

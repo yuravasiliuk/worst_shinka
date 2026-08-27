@@ -22,7 +22,7 @@ class Selector_LLM():
         Method return two model ids.
         """
         two_selected_model_ids = np.random.choice(self.model_ids, size = 2, replace = False, p = self.probabilities)
-        return two_selected_model_ids
+        return two_selected_model_ids.tolist()
 
     def update_probabilities(self, model_id_1, model_id_2, who_won): 
         """
