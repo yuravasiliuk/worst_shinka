@@ -8,6 +8,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Any
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +49,14 @@ def _rl_modules() -> dict[str, Any]:
     utils.MODEL_SCORE_HISTORY_PATH = str(run_dir / "model_score_history.csv")
 
     modules: dict[str, Any] = {"utils": utils}
-    for name in ("run_training", "run_tournament", "run_score_evaluation", "run_aggregate_data", "run_play", "run_reset"):
+    for name in ("run_training", "run_tournament", "run_score_evaluation","run_aggregate_data", "run_play", "run_reset", "train"):
         modules[name] = importlib.import_module(name)
     modules["run_training"].RESULTS_DIR = str(run_dir)
     modules["run_tournament"].RESULTS_DIR = str(run_dir)
     modules["run_tournament"].TOURNAMENT_TABLE_PATH = str(run_dir / "tournament_table.csv")
     modules["run_aggregate_data"].RESULTS_DIR = str(run_dir)
     modules["run_reset"].RESULTS_DIR = str(run_dir)
+    modules["train"].RESULTS_DIR = str(run_dir)
     return modules
 
 
@@ -294,6 +296,39 @@ def _play_human_vs_model(model_path: Path) -> None:
     finally:
         env.close()
         pygame.quit()
+def get_parents_data(run_dir: Path | str) -> list[dict]:
+    run_dir = Path(run_dir)
+    parents_data = []
+    
+    for gen_dir in sorted(run_dir.glob("gen_*")):
+        if not gen_dir.is_dir():
+            continue
+
+        algo_file = gen_dir / "algorithm.py"
+        metrics_file = gen_dir / "metrics.json"
+
+        if (
+            not algo_file.is_file() 
+            or algo_file.stat().st_size == 0 
+            or not metrics_file.is_file() 
+            or metrics_file.stat().st_size == 0
+        ):
+            continue
+
+        try:
+            algo_code = algo_file.read_text(encoding="utf-8")
+            
+            metrics_data = json.loads(metrics_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        parents_data.append({
+            "gen": gen_dir.name,
+            "code": algo_code,
+            "metrics": metrics_data
+        })
+
+    return parents_data
 
 def reset_run(*, run_dir: Path) -> None:
     resolved = configure_run(run_dir)
