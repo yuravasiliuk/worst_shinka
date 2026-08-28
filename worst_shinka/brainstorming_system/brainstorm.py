@@ -164,6 +164,21 @@ class BrainstormingPipeline:
         self.model_b = model_b
         self.max_debate_rounds = max_debate_rounds
         self.path = config_path
+        self.cost_usd = 0.0
+        self.cost_available = False
+
+    def _record_response_cost(self, response) -> None:
+        usage = getattr(response, "usage", None)
+        cost = getattr(usage, "cost", None) if usage is not None else None
+        if cost is None and isinstance(usage, dict):
+            cost = usage.get("cost")
+        try:
+            if cost is not None:
+                self.cost_usd += float(cost)
+                self.cost_available = True
+        except (TypeError, ValueError):
+            pass
+
     def _call_llm(self, model: str, system_prompt: str, user_prompt: str) -> str:
         response = client.chat.completions.create(
             model=model,
@@ -172,6 +187,7 @@ class BrainstormingPipeline:
                 {"role": "user", "content": user_prompt}
             ]
         )
+        self._record_response_cost(response)
         return response.choices[0].message.content or ""
     def save_debate_to_json(self, debate_history: list[dict], filepath):
         directory = os.path.dirname(filepath)
@@ -256,10 +272,15 @@ class EvolutionWorkflow:
                 history_path: str,
                 train_config_path: str,
                 train_function: Callable,
-                max_debate_rounds: int = 2):
+                max_debate_rounds: int = 2,
+                workers: int = 1):
         self.brainstormer = BrainstormingPipeline(models[0], models[1], history_path, max_debate_rounds)
-        judge = Judge(train_function=train_function, history_path=os.path.join(history_path, "history_judge"))
-        self.judge = BrainstormingEvaluationAdapter(judge, train_function)
+        judge = Judge(
+            train_function=train_function,
+            history_path=os.path.join(history_path, "history_judge"),
+            workers=workers,
+        )
+        self.judge = BrainstormingEvaluationAdapter(judge, train_function, workers=workers)
         self.gen_id = gen_id
         self.train_config_path = train_config_path
         try:
@@ -267,6 +288,10 @@ class EvolutionWorkflow:
                 self.hyperparameter_keys = sorted((yaml.safe_load(f) or {}).keys())
         except OSError:
             self.hyperparameter_keys = []
+
+    @property
+    def cost_usd(self) -> float | None:
+        return self.brainstormer.cost_usd if self.brainstormer.cost_available else None
 
     def execute_crossover(self, parents_data: List[Dict], max_judge_retries: int = 3):
         rejection_reason = None

@@ -200,9 +200,10 @@ def train(gen_id: int, config_path: str, algorithm_path: str, model_output_path:
 
     average_score = episode_rewards[-1] if episode_rewards else None
     initial_elo = ELO_BASELINE if gen_id == 0 else None
-    score_history = _load_model_score_history()
-    score_history.append([gen_id, initial_elo, average_score, round(training_duration, 2)])
-    _save_model_score_history(score_history)
+    if not os.environ.get("WORST_SHINKA_SKIP_HISTORY"):
+        score_history = _load_model_score_history()
+        score_history.append([gen_id, initial_elo, average_score, round(training_duration, 2)])
+        _save_model_score_history(score_history)
 
     logger.info(
         "[gen %s] training complete — %s episodes in %s | avg reward (last %s): %.3f | best: %.2f | saved to %s",

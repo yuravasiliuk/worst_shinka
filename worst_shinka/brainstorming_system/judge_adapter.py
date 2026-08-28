@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import multiprocessing
+import os
 from typing import Callable
 
 from worst_shinka.judge import Judge
@@ -11,11 +13,13 @@ class BrainstormingJudgeAdapter:
         self,
         judge: Judge,
         train_function: Callable,
+        workers: int = 1,
     ):
         self.judge = judge
         self.train_function = train_function
+        self.workers = max(1, workers)
 
-    def _train_or_none(self, *, gen_id: int, config_path: str, algorithm_path, model_output_path) -> "str | None":
+    def _train_or_none(self, gen_id: int, config_path: str, algorithm_path, model_output_path) -> "str | None":
         """Train one proposal; return None on success or an error summary on failure.
 
         Static pre-flight checks (missing functions, unknown config keys, forbidden
@@ -26,6 +30,7 @@ class BrainstormingJudgeAdapter:
         taking down the whole run.
         """
         try:
+            os.environ["WORST_SHINKA_SKIP_HISTORY"] = "1"
             self.train_function(
                 gen_id=gen_id,
                 config_path=config_path,
@@ -35,6 +40,8 @@ class BrainstormingJudgeAdapter:
             return None
         except Exception as exc:
             return f"{type(exc).__name__}: {exc}"
+        finally:
+            os.environ.pop("WORST_SHINKA_SKIP_HISTORY", None)
 
     def evaluate(
         self,
@@ -68,12 +75,17 @@ class BrainstormingJudgeAdapter:
                 encoding="utf-8",
             )
 
-            error_1 = self._train_or_none(
-                gen_id=gen_id, config_path=config_path, algorithm_path=algorithm_1, model_output_path=model_1
-            )
-            error_2 = self._train_or_none(
-                gen_id=gen_id, config_path=config_path, algorithm_path=algorithm_2, model_output_path=model_2
-            )
+            training_args = [
+                (gen_id, config_path, algorithm_1, model_1),
+                (gen_id, config_path, algorithm_2, model_2),
+            ]
+            if self.workers == 1:
+                errors = [self._train_or_none(*args) for args in training_args]
+            else:
+                context = multiprocessing.get_context("spawn")
+                with context.Pool(processes=min(self.workers, len(training_args))) as pool:
+                    errors = pool.starmap(self._train_or_none, training_args)
+            error_1, error_2 = errors
 
             if error_1 and error_2:
                 return {

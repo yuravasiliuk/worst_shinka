@@ -109,7 +109,7 @@ def fetch_candidates(*, limit: int) -> list[dict[str, Any]]:
     return candidates[:limit]
 
 
-def _train_generation(generation_dir: Path) -> dict[str, Any]:
+def _train_generation(generation_dir: Path, workers: int = 1) -> dict[str, Any]:
     conf, alg, model = _standard_generation_files(generation_dir)
     gen = _generation_number(generation_dir)
     modules = _rl_modules()
@@ -123,7 +123,7 @@ def _train_generation(generation_dir: Path) -> dict[str, Any]:
             shutil.copy2(alg, alg_input)
             modules["run_training"].run_training(gen, str(conf_input), str(alg_input))
 
-    modules["run_tournament"].run_tournament(gen)
+    modules["run_tournament"].run_tournament(gen, workers=workers)
     agg = modules["run_aggregate_data"].run_aggregate_data(gen)
 
     return _candidate_from_aggregate(gen, model, agg)
@@ -152,7 +152,6 @@ def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str,
     }    
 
 def train_and_evaluate(*, proposals: list[dict[str, Any]], workers: int) -> list[dict[str, Any]]:
-    del workers
     evaluated = []
     for proposal in proposals:
         dir_val = proposal.get("generation_dir")
@@ -161,7 +160,7 @@ def train_and_evaluate(*, proposals: list[dict[str, Any]], workers: int) -> list
             if gen is None:
                 raise ValueError("Proposal must contain generation_dir or generation")
             dir_val = _require_run() / f"gen_{gen}"
-        candidate = _train_generation(Path(dir_val))
+        candidate = _train_generation(Path(dir_val), workers=workers)
         candidate.update({key: value for key, value in proposal.items() if key not in candidate})
         evaluated.append(candidate)
 

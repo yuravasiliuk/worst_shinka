@@ -191,7 +191,8 @@ def run_evolution(config: RunConfig) -> Path:
                                      history_path=str(config_path / "brainstorming"),
                                      train_config_path=str(gen0_config_path),
                                      train_function=train,
-                                     max_debate_rounds=1)
+                                     max_debate_rounds=1,
+                                     workers=config.workers)
         parent_data = integrations.get_parents_data(run_dir)
         parent_selector = Selector_Parents()
         performances = [data["metrics"]["score"] for data in parent_data]
@@ -203,6 +204,13 @@ def run_evolution(config: RunConfig) -> Path:
         result = workflow.execute_crossover([parent_data[i] for i in selected_parents])
         if not result:
             log.warning("No accepted evolution proposal for generation %s - continuing", generation)
+            generation_cost = workflow.cost_usd
+            if generation_cost is not None:
+                total_cost += generation_cost
+            print_gen_results(
+                [{"generation": generation, "status": "incorrect", "cost": generation_cost if generation_cost is not None else "-"}],
+                generation=generation,
+            )
             if not any(gen_dir.iterdir()):
                 gen_dir.rmdir()
             continue
@@ -214,6 +222,8 @@ def run_evolution(config: RunConfig) -> Path:
         log.info("Recording %s trained candidate(s)...", len(evaluated))
         accepted = evaluated
         lineage.extend(accepted)
+        generation_cost = workflow.cost_usd
+        total_cost += generation_cost or 0.0
 
         accepted_ids = [item.get("id") for item in accepted]
         result_rows = []
@@ -235,7 +245,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "generation": generation,
                 "status": status,
                 "score": candidate.get("score", ""),
-                "cost": candidate_cost if candidate_cost is not None else "-",
+                "cost": generation_cost if generation_cost is not None else "-",
                 "complexity": candidate.get("complexity", "-"),
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))
             })
