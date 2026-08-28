@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import multiprocessing
 import os
 from typing import Callable
 
 from worst_shinka.judge import Judge
+
+log = logging.getLogger(__name__)
 
 
 class BrainstormingJudgeAdapter:
@@ -87,6 +90,7 @@ class BrainstormingJudgeAdapter:
                 (gen_id, config_path_1, algorithm_1, model_1),
                 (gen_id, config_path_2, algorithm_2, model_2),
             ]
+            log.info("Training %s proposal(s) for generation %s (workers=%s)", len(training_args), gen_id, self.workers)
             if self.workers == 1:
                 errors = [self._train_or_none(*args) for args in training_args]
             else:
@@ -96,6 +100,10 @@ class BrainstormingJudgeAdapter:
             error_1, error_2 = errors
 
             if error_1 and error_2:
+                log.warning(
+                    "Both proposals failed to train for generation %s. Proposal 1: %s Proposal 2: %s",
+                    gen_id, error_1, error_2,
+                )
                 return {
                     "winner": None,
                     "winner_id": None,
@@ -112,6 +120,10 @@ class BrainstormingJudgeAdapter:
             if error_1 or error_2:
                 failed_id, winner_id = ("proposal_1", "proposal_2") if error_1 else ("proposal_2", "proposal_1")
                 winner_model = model_2 if error_1 else model_1
+                log.info(
+                    "%s failed to train for generation %s (%s); %s auto-wins",
+                    failed_id, gen_id, error_1 or error_2, winner_id,
+                )
                 return {
                     "winner": str(winner_model),
                     "winner_id": winner_id,
@@ -122,6 +134,7 @@ class BrainstormingJudgeAdapter:
                     "training_error": f"{failed_id} failed to train and was omitted: {error_1 or error_2}",
                 }
 
+            log.info("Both proposals trained successfully for generation %s; invoking Judge over %s game(s)", gen_id, games)
             return self.judge.evaluate(
                 solution_a=str(model_1),
                 solution_b=str(model_2),

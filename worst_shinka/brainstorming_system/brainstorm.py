@@ -1,4 +1,5 @@
 import ast
+import logging
 import os
 import json
 import re
@@ -14,6 +15,7 @@ from datetime import datetime
 
 
 client: OpenAI = get_client_llm()
+log = logging.getLogger(__name__)
 # TODO refine prompts (Kalina)
 
 @dataclass
@@ -250,8 +252,8 @@ class BrainstormingPipeline:
         
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=4, ensure_ascii=False)
-            
-        print(f"Debate history successfully saved to {filepath}")
+
+        log.debug("Debate history saved to %s", filepath)
     def append_turn_to_jsonl(self, turn_data: dict, filepath: str = "debate_stream.jsonl"):
         directory = os.path.dirname(filepath)
     
@@ -279,6 +281,12 @@ class BrainstormingPipeline:
         if judge_rejection_reason:
             context += f"\nCRITICAL: Previous proposals were REJECTED by Judge for: {judge_rejection_reason}. Address this!"
 
+        log.info(
+            "Brainstorming attempt %s: %s parent(s), models %s / %s%s",
+            attempt, len(parents_data), self.model_a, self.model_b,
+            " (retrying after judge rejection)" if judge_rejection_reason else "",
+        )
+
         debate_history = []
         path = os.path.join(self.path, f"debate_history/debate_check_{attempt}.json")
         b1_prompt = B1_MSG_TEMPLATE.format(context=context)
@@ -295,6 +303,7 @@ class BrainstormingPipeline:
             b2_prompt)
         self.append_turn_to_jsonl(idea_2, path)
         debate_history.extend([{"agent": "Brainstormer 1", "content": idea_1}, {"agent": "Brainstormer 2", "content": idea_2}])
+        log.debug("Both brainstormers proposed an initial idea for attempt %s", attempt)
 
         for round_num in range(self.max_debate_rounds):
             critic_prompt = f"Parent Data:\n{context}\n\nProposed Ideas:\n1: {idea_1}\n2: {idea_2}\nIdentify trade-offs, potential bugs, or performance bottlenecks in both."
@@ -303,6 +312,7 @@ class BrainstormingPipeline:
 
             idea_1 = self._call_llm(self.model_a, SYS_PROMPT_REFINE, REFINE_IDEA_MSG.format(idea=idea_1, critique=critique))
             idea_2 = self._call_llm(self.model_b, SYS_PROMPT_REFINE, REFINE_IDEA_MSG.format(idea=idea_2, critique=critique))
+            log.debug("Critique round %s/%s complete for attempt %s", round_num + 1, self.max_debate_rounds, attempt)
 
             # consider the case when they found agreement faster than self.max_debate_rounds
             # break the loop.
@@ -313,6 +323,10 @@ class BrainstormingPipeline:
         prop2_code = _extract_code(output_2)
         config_1 = _extract_yaml_block(output_1)
         config_2 = _extract_yaml_block(output_2)
+        log.info(
+            "Attempt %s: both proposals generated (config parsed: proposal_1=%s, proposal_2=%s)",
+            attempt, config_1 is not None, config_2 is not None,
+        )
         self.save_debate_to_json(debate_history, os.path.join(self.path, f"debate_history/debate_{attempt}.json"))
         return BrainstormResult(
             proposal_1=prop1_code,
@@ -368,11 +382,12 @@ class EvolutionWorkflow:
                 or has_assert_1 or has_assert_2 or has_try_1 or has_try_2
                 or missing_config_1 or missing_config_2
             ):
-                print(
-                    f"Looping back. Proposal 1 missing {missing_1}, unknown keys {unknown_1}, "
-                    f"has assert {has_assert_1}, has try/except {has_try_1}, missing config {missing_config_1}; "
-                    f"Proposal 2 missing {missing_2}, unknown keys {unknown_2}, "
-                    f"has assert {has_assert_2}, has try/except {has_try_2}, missing config {missing_config_2}"
+                log.warning(
+                    "Attempt %s rejected by static checks. Proposal 1 missing %s, unknown keys %s, "
+                    "has assert %s, has try/except %s, missing config %s; "
+                    "Proposal 2 missing %s, unknown keys %s, has assert %s, has try/except %s, missing config %s",
+                    attempt, missing_1, unknown_1, has_assert_1, has_try_1, missing_config_1,
+                    missing_2, unknown_2, has_assert_2, has_try_2, missing_config_2,
                 )
                 rejection_reason = (
                     "Generated code did not implement the required algorithm.py interface, referenced "
@@ -400,21 +415,21 @@ class EvolutionWorkflow:
 
             if result["winner"]:
                 if result.get("training_error"):
-                    print(f"Success! {result['training_error']}")
+                    log.info("Attempt %s succeeded (with a training issue): %s", attempt, result["training_error"])
                 else:
-                    print(f"Success! Judge selected proposal")
+                    log.info("Attempt %s succeeded: Judge selected %s", attempt, result["winner_id"])
                 is_winner_1 = result["winner_id"] == "proposal_1"
                 result["winner_code"] = proposals.proposal_1 if is_winner_1 else proposals.proposal_2
                 result["winner_config"] = proposals.config_1 if is_winner_1 else proposals.config_2
                 return result
 
             if result.get("training_error"):
-                print(f"Looping back. {result['training_error']}")
+                log.warning("Attempt %s: %s. Retrying.", attempt, result["training_error"])
                 rejection_reason = result["training_error"]
                 continue
 
-            print(f"Looping back. Metrics {result['metrics']}")
+            log.info("Attempt %s: Judge found no clear winner. Metrics: %s", attempt, result["metrics"])
             rejection_reason = f"Lack of sufficient winner. Metrics of both models: {result['metrics']}"
 
-        print("Failed to satisfy Judge within max retries; continuing with the next generation.")
+        log.error("Failed to satisfy Judge within %s attempts; continuing with the next generation.", max_judge_retries)
         return None
