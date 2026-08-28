@@ -11,8 +11,8 @@ from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
 from worst_shinka.brainstorming_system.brainstorm import BrainstormingPipeline, BrainstormResult, EvolutionWorkflow
 from worst_shinka.llm.selector import Selector_LLM
 import os
-import shutil
 import sys
+import yaml
 from pathlib import Path
 from worst_shinka.parent_selector.parents_selector import Selector_Parents
 log = logging.getLogger(__name__)
@@ -174,6 +174,7 @@ def run_evolution(config: RunConfig) -> Path:
                 total_generations,
             )
     llm_selector = Selector_LLM(validated_models)
+    parent_selector = Selector_Parents()
     for generation in range(first_generation, first_generation + config.generations):
         
         gen_dir = run_dir / f"gen_{generation}"
@@ -193,25 +194,23 @@ def run_evolution(config: RunConfig) -> Path:
 
         
         config_path = run_dir / f"gen_{generation}"
-        gen0_config_path = run_dir / "gen_0" / "config.yaml"
         rl_modules = integrations._rl_modules()
         train = rl_modules["train"].train
         workflow = EvolutionWorkflow(models=evolution_models,
                                      gen_id=generation,
                                      history_path=str(config_path / "brainstorming"),
-                                     train_config_path=str(gen0_config_path),
                                      train_function=train,
                                      max_debate_rounds=1,
                                      workers=config.workers)
         parent_data = integrations.get_parents_data(run_dir)
-        parent_selector = Selector_Parents()
+        parent_by_gen = {data["gen"]: data for data in parent_data}
         performances = [data["metrics"]["score"] for data in parent_data]
-        ids = [i for i in range(len(performances))]
+        ids = [data["gen"] for data in parent_data]
         if NUMBER_PARENTS > len(performances):
             selected_parents = parent_selector.select_parent_ids(len(performances), ids, performances)
         else:
             selected_parents = parent_selector.select_parent_ids(NUMBER_PARENTS, ids, performances)
-        result = workflow.execute_crossover([parent_data[i] for i in selected_parents])
+        result = workflow.execute_crossover([parent_by_gen[gen_id] for gen_id in selected_parents])
         if not result:
             log.warning("No accepted evolution proposal for generation %s - continuing", generation)
             generation_cost = workflow.cost_usd
@@ -224,8 +223,11 @@ def run_evolution(config: RunConfig) -> Path:
             if not any(gen_dir.iterdir()):
                 gen_dir.rmdir()
             continue
+        parent_selector.update_N(selected_parents)
         (gen_dir / "algorithm.py").write_text(result["winner_code"], encoding="utf-8")
-        shutil.copy2(gen0_config_path, gen_dir / "config.yaml")
+        (gen_dir / "config.yaml").write_text(
+            yaml.safe_dump(result["winner_config"], sort_keys=False), encoding="utf-8"
+        )
         proposals = [{"generation": generation, "generation_dir": str(gen_dir)}]
         log.info("Training & evaluating %s proposal(s) (workers=%s)...", len(proposals), config.workers)
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)

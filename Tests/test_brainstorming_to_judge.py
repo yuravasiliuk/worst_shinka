@@ -150,7 +150,8 @@ def update_model(model, state, action, reward, next_state, done, hyperparameters
         proposal_1,
         proposal_2,
         gen_id=1,
-        config_path="initial_model/config.yaml",
+        config_1={"epsilon_end": 0.05, "gamma": 0.99},
+        config_2={"epsilon_end": 0.05, "gamma": 0.95},
         games=5,
     )
 

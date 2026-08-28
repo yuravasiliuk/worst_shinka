@@ -21,6 +21,8 @@ class BrainstormResult:
     proposal_1: str
     proposal_2: str
     debate_history: List[Dict[str, str]]
+    config_1: Optional[Dict] = None
+    config_2: Optional[Dict] = None
 
 
 
@@ -35,10 +37,9 @@ The code must be a single, self-contained Python module that implements EXACTLY 
   - select_action(model, observation, epsilon: float, num_actions: int) -> int
   - select_opponent_action(model, observation, num_actions: int) -> int
   - update_model(model, state, action, reward, next_state, done, hyperparameters) -> None
-The `hyperparameters`/config dict is loaded verbatim from the generation's fixed config.yaml and is NOT extensible - only reference keys that are explicitly listed as available below; inventing a new key crashes training with a KeyError.
+The `hyperparameters`/config dict comes from your own proposed config.yaml (see below), not a fixed schema - you may retune existing keys' values and/or introduce new keys your algorithm needs. The only hard rule is self-consistency: every key your code reads via `hyperparameters[...]`/`config[...]` MUST be declared in the config.yaml you output for this same proposal, or training crashes with a KeyError.
 `model`, `observation`, and the Q-values returned by `model.predict(...)` are opaque objects whose concrete implementation you have NOT been shown - only use operations already demonstrated by the parent code (e.g. `.argmax()` on the predict result, `is None`/`is not None` on `model`). Do NOT add `assert`/`isinstance`/type-check statements, truthiness checks (`if q_values:`), or any other comparison about their type, shape, or value beyond `is None` on `model` - such assumptions are frequently wrong (e.g. a Q-value array is never a plain bool/list and can't be used in a truthiness check) and crash training.
 Do NOT wrap calls to `model.predict(...)` or any other logic in `try`/`except` to log a warning and fall back to a random/default action - errors must propagate, not be silently hidden; the reference implementation has no try/except anywhere. If you are unsure an operation is safe, don't use it - stick to what the parent code already demonstrates.
-Output raw Python source only - no markdown code fences, no explanatory text outside the code.
 """
 
 SYS_PROMPT_BRAINSTRORMER_TEMPLATE = """
@@ -72,10 +73,31 @@ Critique:
 {critique}
 """
 
-CODE_OUTPUT_SYS_PROMPT_TEMPLATE = "Output clean Python code for Proposal {n} based on final consensus.\n" + ALGORITHM_INTERFACE_SPEC
+CODE_OUTPUT_SYS_PROMPT_TEMPLATE = (
+    "Output clean Python code for Proposal {n} based on final consensus.\n"
+    + ALGORITHM_INTERFACE_SPEC
+    + """
+Your response must contain exactly these two sections, in this order, and nothing else - no prose
+before, between, or after them:
+
+### ALGORITHM.PY
+```python
+<the complete algorithm.py source, following every rule above>
+```
+
+### CONFIG.YAML
+```yaml
+<the complete config.yaml content: a flat mapping of every hyperparameter key the code above reads
+via hyperparameters[...]/config[...] - keep unchanged parent values as-is, retune what you changed,
+and add any new keys you introduced>
+```
+"""
+)
 
 
 _CODE_FENCE_RE = re.compile(r"```(?:python)?\s*\n(.*?)```", re.DOTALL)
+_YAML_FENCE_RE = re.compile(r"```ya?ml\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+_GENERIC_FENCE_RE = re.compile(r"```[a-zA-Z]*\s*\n(.*?)```", re.DOTALL)
 
 
 def _extract_code(text: str) -> str:
@@ -86,6 +108,32 @@ def _extract_code(text: str) -> str:
     """
     match = _CODE_FENCE_RE.search(text)
     return match.group(1).strip() if match else text.strip()
+
+
+def _extract_yaml_block(text: str) -> Optional[Dict]:
+    """Parse the config.yaml fenced block in `text` into a dict, or None if absent/invalid.
+
+    Prefers a fence explicitly tagged ```yaml/```yml (case-insensitive). Falls back to the
+    *last* generically-fenced block in `text` when there are at least two fenced blocks and
+    none is yaml-tagged - the expected shape is "```python ... ``` then ```<something> ... ```",
+    so the second block is the config even if the model dropped/misspelled the language tag.
+    Returns None (rather than raising) on no candidate fence, a YAML parse error, or a parsed
+    value that isn't a mapping - callers treat any of these as "no config was proposed" and
+    reject the proposal, same as a missing required algorithm function.
+    """
+    match = _YAML_FENCE_RE.search(text)
+    if match:
+        candidate = match.group(1)
+    else:
+        blocks = _GENERIC_FENCE_RE.findall(text)
+        if len(blocks) < 2:
+            return None
+        candidate = blocks[-1]
+    try:
+        parsed = yaml.safe_load(candidate)
+    except yaml.YAMLError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _missing_algorithm_functions(code: str) -> List[str]:
@@ -221,15 +269,13 @@ class BrainstormingPipeline:
         parents_data: List[Dict],
         attempt: int,
         judge_rejection_reason: Optional[str] = None,
-        hyperparameter_keys: Optional[List[str]] = None,
     ) -> BrainstormResult:
         context = f"Parent Code Candidates & Performance:\n{json.dumps(parents_data, indent=2)}\n"
-        if hyperparameter_keys:
-            context += (
-                f"\nThe hyperparameters/config dict available to get_epsilon/update_model contains "
-                f"EXACTLY these keys, nothing else: {hyperparameter_keys}. Do not invent, rename, or "
-                "assume any other keys - accessing a missing key crashes training."
-            )
+        context += (
+            "\nEach parent above includes its own config.yaml (its hyperparameters dict). You may reuse, "
+            "retune, or extend these hyperparameters in your proposal - the config.yaml you output must "
+            "declare every key your code reads via hyperparameters[...]/config[...]."
+        )
         if judge_rejection_reason:
             context += f"\nCRITICAL: Previous proposals were REJECTED by Judge for: {judge_rejection_reason}. Address this!"
 
@@ -261,16 +307,25 @@ class BrainstormingPipeline:
             # consider the case when they found agreement faster than self.max_debate_rounds
             # break the loop.
 
-        prop1_code = _extract_code(self._call_llm(self.model_a, CODE_OUTPUT_SYS_PROMPT_TEMPLATE.format(n=1), idea_1))
-        prop2_code = _extract_code(self._call_llm(self.model_b, CODE_OUTPUT_SYS_PROMPT_TEMPLATE.format(n=2), idea_2))
+        output_1 = self._call_llm(self.model_a, CODE_OUTPUT_SYS_PROMPT_TEMPLATE.format(n=1), idea_1)
+        output_2 = self._call_llm(self.model_b, CODE_OUTPUT_SYS_PROMPT_TEMPLATE.format(n=2), idea_2)
+        prop1_code = _extract_code(output_1)
+        prop2_code = _extract_code(output_2)
+        config_1 = _extract_yaml_block(output_1)
+        config_2 = _extract_yaml_block(output_2)
         self.save_debate_to_json(debate_history, os.path.join(self.path, f"debate_history/debate_{attempt}.json"))
-        return BrainstormResult(proposal_1=prop1_code, proposal_2=prop2_code, debate_history=debate_history)
+        return BrainstormResult(
+            proposal_1=prop1_code,
+            proposal_2=prop2_code,
+            debate_history=debate_history,
+            config_1=config_1,
+            config_2=config_2,
+        )
 
 class EvolutionWorkflow:
-    def __init__(self, models: List[str], 
-                gen_id: int, 
+    def __init__(self, models: List[str],
+                gen_id: int,
                 history_path: str,
-                train_config_path: str,
                 train_function: Callable,
                 max_debate_rounds: int = 2,
                 workers: int = 1):
@@ -282,12 +337,6 @@ class EvolutionWorkflow:
         )
         self.judge = BrainstormingEvaluationAdapter(judge, train_function, workers=workers)
         self.gen_id = gen_id
-        self.train_config_path = train_config_path
-        try:
-            with open(train_config_path) as f:
-                self.hyperparameter_keys = sorted((yaml.safe_load(f) or {}).keys())
-        except OSError:
-            self.hyperparameter_keys = []
 
     @property
     def cost_usd(self) -> float | None:
@@ -298,13 +347,18 @@ class EvolutionWorkflow:
 
         for attempt in range(max_judge_retries):
             proposals = self.brainstormer.run_brainstorming(
-                parents_data, attempt, rejection_reason, hyperparameter_keys=self.hyperparameter_keys
+                parents_data, attempt, rejection_reason
             )
+
+            missing_config_1 = proposals.config_1 is None
+            missing_config_2 = proposals.config_2 is None
+            keys_1 = list(proposals.config_1.keys()) if proposals.config_1 else []
+            keys_2 = list(proposals.config_2.keys()) if proposals.config_2 else []
 
             missing_1 = _missing_algorithm_functions(proposals.proposal_1)
             missing_2 = _missing_algorithm_functions(proposals.proposal_2)
-            unknown_1 = _unknown_hyperparameter_keys(proposals.proposal_1, self.hyperparameter_keys)
-            unknown_2 = _unknown_hyperparameter_keys(proposals.proposal_2, self.hyperparameter_keys)
+            unknown_1 = _unknown_hyperparameter_keys(proposals.proposal_1, keys_1)
+            unknown_2 = _unknown_hyperparameter_keys(proposals.proposal_2, keys_2)
             has_assert_1 = _has_assert_statements(proposals.proposal_1)
             has_assert_2 = _has_assert_statements(proposals.proposal_2)
             has_try_1 = _has_try_except(proposals.proposal_1)
@@ -312,40 +366,46 @@ class EvolutionWorkflow:
             if (
                 missing_1 or missing_2 or unknown_1 or unknown_2
                 or has_assert_1 or has_assert_2 or has_try_1 or has_try_2
+                or missing_config_1 or missing_config_2
             ):
                 print(
                     f"Looping back. Proposal 1 missing {missing_1}, unknown keys {unknown_1}, "
-                    f"has assert {has_assert_1}, has try/except {has_try_1}; "
+                    f"has assert {has_assert_1}, has try/except {has_try_1}, missing config {missing_config_1}; "
                     f"Proposal 2 missing {missing_2}, unknown keys {unknown_2}, "
-                    f"has assert {has_assert_2}, has try/except {has_try_2}"
+                    f"has assert {has_assert_2}, has try/except {has_try_2}, missing config {missing_config_2}"
                 )
                 rejection_reason = (
                     "Generated code did not implement the required algorithm.py interface, referenced "
-                    "hyperparameter keys that don't exist in config.yaml, or contained a forbidden assert/try-except statement. "
+                    "hyperparameter keys that don't exist in its own config.yaml, contained a forbidden "
+                    "assert/try-except statement, or was missing a valid ```yaml config.yaml block entirely. "
                     f"Proposal 1 is missing functions: {missing_1 or 'nothing'}, unknown keys used: {unknown_1 or 'none'}, "
-                    f"contains assert: {has_assert_1}, contains try/except: {has_try_1}. "
+                    f"contains assert: {has_assert_1}, contains try/except: {has_try_1}, missing config: {missing_config_1}. "
                     f"Proposal 2 is missing functions: {missing_2 or 'nothing'}, unknown keys used: {unknown_2 or 'none'}, "
-                    f"contains assert: {has_assert_2}, contains try/except: {has_try_2}. "
+                    f"contains assert: {has_assert_2}, contains try/except: {has_try_2}, missing config: {missing_config_2}. "
                     f"Every proposal MUST define exactly these top-level functions: {', '.join(REQUIRED_ALGORITHM_FUNCTIONS)}. "
-                    f"The only available hyperparameter keys are: {self.hyperparameter_keys}. "
+                    "Every proposal MUST include a ```yaml fenced config.yaml block that declares every "
+                    "hyperparameter key its code references. "
                     "Remove any assert/isinstance/type-check statements or try/except blocks about model, observation, "
                     "or Q-values - you were not shown their concrete implementation, and errors must propagate, not be hidden."
                 )
                 continue
 
             result = self.judge.evaluate(
-                proposal_1=proposals.proposal_1, 
+                proposal_1=proposals.proposal_1,
                 proposal_2=proposals.proposal_2,
-                config_path=self.train_config_path,
+                config_1=proposals.config_1,
+                config_2=proposals.config_2,
                 gen_id=self.gen_id
             )
-            
+
             if result["winner"]:
                 if result.get("training_error"):
                     print(f"Success! {result['training_error']}")
                 else:
                     print(f"Success! Judge selected proposal")
-                result["winner_code"] = (proposals.proposal_1 if result["winner_id"] == "proposal_1" else proposals.proposal_2)
+                is_winner_1 = result["winner_id"] == "proposal_1"
+                result["winner_code"] = proposals.proposal_1 if is_winner_1 else proposals.proposal_2
+                result["winner_config"] = proposals.config_1 if is_winner_1 else proposals.config_2
                 return result
 
             if result.get("training_error"):

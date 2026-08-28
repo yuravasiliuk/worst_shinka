@@ -28,10 +28,10 @@ def test_failed_judge_retries_three_times_and_returns_control():
     workflow = EvolutionWorkflow.__new__(EvolutionWorkflow)
     workflow.brainstormer = Mock()
     workflow.judge = Mock()
-    workflow.hyperparameter_keys = []
+    workflow.gen_id = 0
 
     workflow.brainstormer.run_brainstorming.side_effect = [
-        BrainstormResult(VALID_PROPOSAL, VALID_PROPOSAL, [])
+        BrainstormResult(VALID_PROPOSAL, VALID_PROPOSAL, [], config_1={}, config_2={})
         for _ in range(3)
     ]
     workflow.judge.evaluate.return_value = {

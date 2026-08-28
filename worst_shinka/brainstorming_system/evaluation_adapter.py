@@ -13,10 +13,10 @@ class BrainstormingEvaluationAdapter:
     Adapter between Brainstorming and the RL Judge.
 
     Input:
-        Two Python algorithm proposals.
+        Two (algorithm.py, config.yaml) proposal pairs.
 
     Process:
-        proposal -> training -> model -> Judge.
+        proposal + its own config -> training -> model -> Judge.
 
     Output:
         Judge result containing the selected proposal.
@@ -40,13 +40,15 @@ class BrainstormingEvaluationAdapter:
         proposal_2: str,
         *,
         gen_id: int,
-        config_path: str,
+        config_1: dict,
+        config_2: dict,
         games: int = 5,
     ) -> dict:
         return self._adapter.evaluate(
             proposal_1=proposal_1,
             proposal_2=proposal_2,
             gen_id=gen_id,
-            config_path=config_path,
+            config_1=config_1,
+            config_2=config_2,
             games=games,
         )

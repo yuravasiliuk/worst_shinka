@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 import json
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -303,32 +304,46 @@ def get_parents_data(run_dir: Path | str) -> list[dict]:
     run_dir = Path(run_dir)
     parents_data = []
     
-    for gen_dir in sorted(run_dir.glob("gen_*")):
+    def _sort_key(path: Path) -> int:
+        try:
+            return _generation_number(path)
+        except ValueError:
+            return -1  # non-numeric gen_* match; sort first, harmless since is_dir()/files checks below skip it
+
+    for gen_dir in sorted(run_dir.glob("gen_*"), key=_sort_key):
         if not gen_dir.is_dir():
             continue
 
         algo_file = gen_dir / "algorithm.py"
         metrics_file = gen_dir / "metrics.json"
+        config_file = gen_dir / "config.yaml"
 
         if (
-            not algo_file.is_file() 
-            or algo_file.stat().st_size == 0 
-            or not metrics_file.is_file() 
+            not algo_file.is_file()
+            or algo_file.stat().st_size == 0
+            or not metrics_file.is_file()
             or metrics_file.stat().st_size == 0
+            or not config_file.is_file()
+            or config_file.stat().st_size == 0
         ):
             continue
 
         try:
             algo_code = algo_file.read_text(encoding="utf-8")
-            
+
             metrics_data = json.loads(metrics_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+            config_data = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, yaml.YAMLError, OSError):
+            continue
+
+        if not isinstance(config_data, dict):
             continue
 
         parents_data.append({
             "gen": gen_dir.name,
             "code": algo_code,
-            "metrics": metrics_data
+            "metrics": metrics_data,
+            "config": config_data
         })
 
     return parents_data
