@@ -207,16 +207,16 @@ def _model_location(model_path: str) -> tuple[Path, int]:
         raise FileNotFoundError(f"Model does not exist: {path}")
     return path, _generation_number(path.parent)
 
-def play_candidate(*, model_path: str, opponent_path: str | None = None) -> None:
+def play_candidate(*, model_path: str, opponent_path: str | None = None, stop_event: Any = None) -> None:
     model, gen = _model_location(model_path)
     configure_run(model.parent.parent)
     if opponent_path is not None:
         opponent, opponent_gen = _model_location(opponent_path)
         if opponent.parent.parent != model.parent.parent:
             raise ValueError("Both bot models must belong to the same run directory") #update in future not to
-        _rl_modules()["run_play"].run_play(gen, opponent_gen)
+        _rl_modules()["run_play"].run_play(gen, opponent_gen, stop_event=stop_event)
         return
-    _play_human_vs_model(model)
+    _play_human_vs_model(model, stop_event=stop_event)
 
 
 def _human_action(pygame: Any) -> int:
@@ -248,7 +248,7 @@ def _human_action(pygame: Any) -> int:
 
     return action_names.index(name)
 
-def _play_human_vs_model(model_path: Path) -> None:
+def _play_human_vs_model(model_path: Path, stop_event: Any = None) -> None:
     import pygame
     import torch
     from pettingzoo.atari import tennis_v3
@@ -269,6 +269,8 @@ def _play_human_vs_model(model_path: Path) -> None:
 
     try:
         for agent in env.agent_iter():
+            if stop_event is not None and stop_event.is_set():
+                running = False
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or(event.type == pygame.KEYDOWN and event.key == pygame.K_q):
                     running = False
