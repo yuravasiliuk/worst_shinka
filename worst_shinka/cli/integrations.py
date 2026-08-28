@@ -171,7 +171,9 @@ def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str,
     }    
 
 
-def train_and_evaluate(*, proposals: list[dict[str, Any]], workers: int tournament: bool = False) -> list[dict[str, Any]]:
+def train_and_evaluate(
+    *, proposals: list[dict[str, Any]], workers: int, tournament: bool = False
+) -> list[dict[str, Any]]:
     evaluated = []
     for proposal in proposals:
         dir_val = proposal.get("generation_dir")
