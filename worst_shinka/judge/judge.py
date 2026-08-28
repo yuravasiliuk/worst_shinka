@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import multiprocessing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+
+log = logging.getLogger(__name__)
 
 import importlib.util
 from pathlib import Path
@@ -242,6 +245,7 @@ class Judge:
                 )
                 + "\n"
             )
+        log.debug("Recorded judge decision to %s", self.history_path)
 
     def evaluate(
         self,
@@ -258,6 +262,11 @@ class Judge:
 
         if games <= 0:
             raise ValueError("games must be greater than zero")
+
+        log.info(
+            "Judging %s vs %s over %s game(s) (workers=%s)",
+            id_a or solution_a, id_b or solution_b, games, self.workers,
+        )
 
         results = self._evaluate_matches(
             solution_a,
@@ -364,6 +373,16 @@ class Judge:
             "matches": results,
         }
 
+        if winner_id is not None:
+            log.info(
+                "Judge decision: %s wins (score %.3f vs %.3f, win rate %.0f%% vs %.0f%%)",
+                winner_id, score_a if winner is solution_a else score_b,
+                score_b if winner is solution_a else score_a,
+                win_rate_a * 100, win_rate_b * 100,
+            )
+        else:
+            log.info("Judge decision: draw (score %.3f vs %.3f)", score_a, score_b)
+
         self._record_winner(
             result,
             generation=generation,
@@ -389,6 +408,8 @@ class Judge:
             raise RuntimeError(
                 "train_function is required for evaluate_programs()"
             )
+
+        log.info("Training 2 program(s) for generation %s before judging", gen_id)
 
         import tempfile
 

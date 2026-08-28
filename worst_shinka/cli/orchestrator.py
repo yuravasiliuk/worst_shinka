@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from .config import RunConfig
-from .terminal import print_startup_info, print_gen_header, print_gen_metadata, print_gen_results
+from .terminal import print_startup_info, print_gen_header, print_gen_metadata, print_gen_results, print_final_summary
 from . import integrations
 from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
 from worst_shinka.brainstorming_system.brainstorm import BrainstormingPipeline, BrainstormResult, EvolutionWorkflow
@@ -210,6 +210,7 @@ def run_evolution(config: RunConfig) -> Path:
             selected_parents = parent_selector.select_parent_ids(len(performances), ids, performances)
         else:
             selected_parents = parent_selector.select_parent_ids(NUMBER_PARENTS, ids, performances)
+        log.info("Selected parents for generation %s: %s", generation, ", ".join(selected_parents))
         result = workflow.execute_crossover([parent_by_gen[gen_id] for gen_id in selected_parents])
         if not result:
             log.warning("No accepted evolution proposal for generation %s - continuing", generation)
@@ -224,6 +225,7 @@ def run_evolution(config: RunConfig) -> Path:
                 gen_dir.rmdir()
             continue
         parent_selector.update_N(selected_parents)
+        log.info("Generation %s: brainstorming winner is %s", generation, result["winner_id"])
         (gen_dir / "algorithm.py").write_text(result["winner_code"], encoding="utf-8")
         (gen_dir / "config.yaml").write_text(
             yaml.safe_dump(result["winner_config"], sort_keys=False), encoding="utf-8"
@@ -296,5 +298,9 @@ def run_evolution(config: RunConfig) -> Path:
     })
 
     _write_json(manifest_path, manifest)
+
+    log.info("Evolution finished — %s model(s) produced across %s generation(s), total cost $%.4f",
+              len(lineage), max(_generation_numbers(run_dir)) + 1, total_cost)
+    print_final_summary(lineage)
 
     return run_dir

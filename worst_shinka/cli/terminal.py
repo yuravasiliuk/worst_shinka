@@ -373,6 +373,62 @@ def print_gen_results(
 
     target.flush()
 
+def print_final_summary(
+        rows: list[dict[str, object]],
+        *,
+        heading: str = "EVOLUTION SUMMARY (BEST → WORST)",
+        file: TextIO | None = None
+) -> None:
+    """Render every model produced by the run, ranked by score (best first).
+
+    `rows` is expected in the same shape as lineage nodes (generation/status/score/
+    average_training_score/elo/time) - entries with no score sort after all scored ones,
+    rather than being dropped, so a still-broken/incomplete generation stays visible.
+    """
+    target = file if file else sys.stdout
+    color = supports_color(target)
+
+    def sort_key(row: dict[str, object]) -> tuple[int, float]:
+        score = row.get("score")
+        return (0, -score) if isinstance(score, (int, float)) else (1, 0.0)
+
+    ranked = sorted(rows, key=sort_key)
+
+    def check_val(value: object) -> object:
+        return "-" if value is None else value
+
+    values = [
+        (
+            rank,
+            check_val(row.get("generation", "-")),
+            row.get("status") or "pending",
+            check_val(row.get("score", "-")),
+            check_val(row.get("average_training_score", "-")),
+            check_val(row.get("elo", "-")),
+            _format_duration(row.get("time")),
+        )
+        for rank, row in enumerate(ranked, start=1)
+    ]
+
+    target.write("\n" + styled(heading, YELLOW + BOLD, enabled=color) + "\n")
+    if not values:
+        target.write(styled("(no models produced)", GRAY, enabled=color) + "\n")
+        target.flush()
+        return
+
+    target.write(
+        _render_table(
+            ("RANK", "GEN", "STATUS", "SCORE", "AVG SCORE", "ELO", "TIME"),
+            values,
+            enabled=color,
+            border_color=PURPLE,
+            numeric_columns={0, 1, 3, 4, 5, 6},
+            status_column=2,
+        ) + "\n"
+    )
+    target.flush()
+
+
 class ColoredLogFormatter(logging.Formatter):
     """logging formatter with colored date, time and level"""
 
