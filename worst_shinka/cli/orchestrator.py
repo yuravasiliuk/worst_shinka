@@ -1,18 +1,22 @@
 from __future__ import annotations
-
 import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 from .config import RunConfig
 from .terminal import print_startup_info, print_gen_header, print_gen_metadata, print_gen_results
 from . import integrations
 from worst_shinka.llm import select_models_for_mode, validate_openrouter_setup
-
+from worst_shinka.brainstorming_system.brainstorm import BrainstormingPipeline, BrainstormResult, EvolutionWorkflow
+from worst_shinka.llm.selector import Selector_LLM
+import os
+import sys
+import yaml
+from pathlib import Path
+from worst_shinka.parent_selector.parents_selector import Selector_Parents
 log = logging.getLogger(__name__)
-
+NUMBER_PARENTS = 2
 class _PathEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Any:
         if isinstance(obj, Path):
@@ -30,7 +34,13 @@ def _default_run_name() -> str:
 def _generation_numbers(run_dir: Path) -> list[int]:
     numbers = []
     for path in run_dir.glob("gen_*"):
-        if not path.is_dir() or not (path / "model.pt").is_file():
+        metrics_file = path / "metrics.json"
+        if (
+            not path.is_dir()
+            or not (path / "model.pt").is_file()
+            or not metrics_file.is_file()
+            or metrics_file.stat().st_size == 0
+        ):
             continue
         try:
             numbers.append(int(path.name.removeprefix("gen_")))
@@ -45,7 +55,8 @@ def _initial_lineage(config: RunConfig) -> list[dict[str, Any]]:
         "parent_id": None,
         "generation": 0,
         "model": config.initial_model,
-        "score": None,
+        "average_training_score": None,
+        "score": 0.0,
         "status": "initial-placeholder"
     }]
 
@@ -102,7 +113,8 @@ def run_evolution(config: RunConfig) -> Path:
         if initial_src.is_dir():
             integrations.prepare_initial_generation(source_dir=initial_src, generation_dir=gen_dir)
             initial_candidates = integrations.train_and_evaluate(
-                proposals=[{"generation": 0, "generation_dir": str(gen_dir)}], workers=1
+                proposals=[{"generation": 0, "generation_dir": str(gen_dir)}], workers=1,
+                tournament=config.tournament
             )
             if initial_candidates:
                 lineage = initial_candidates
@@ -110,6 +122,7 @@ def run_evolution(config: RunConfig) -> Path:
         _write_json(gen_dir / "metrics.json", {
             "generation": 0,
             "status": initial_node.get("status", "initial-placeholder"),
+            "average_training_score": initial_node.get("average_training_score"),
             "score": initial_node.get("score"),
             "elo": initial_node.get("elo")
         }) 
@@ -117,7 +130,6 @@ def run_evolution(config: RunConfig) -> Path:
         _write_json(lineage_path, {"nodes": lineage})
         generations = [0]
         created_initial_gen = True
-
     if created_initial_gen:
         initial = lineage[0] if lineage else {}
         initial_status = initial.get("status")
@@ -128,7 +140,8 @@ def run_evolution(config: RunConfig) -> Path:
             [{
                 "generation": 0,
                 "status": initial_status,
-                "score":initial.get("score", "-") if initial.get("score") is not None else "-",
+                "average_training_score": initial.get("average_training_score", "-") if initial.get("average_training_score") is not None else "-",
+                "score": initial.get("score", "-") if initial.get("score") is not None else "-",
                 "cost": initial.get("cost", "-"),
                 "elo": initial.get("elo", "-"),
                 "time": initial.get("time", "-")
@@ -160,32 +173,69 @@ def run_evolution(config: RunConfig) -> Path:
                 generation,
                 total_generations,
             )
-
+    llm_selector = Selector_LLM(validated_models)
+    parent_selector = Selector_Parents()
     for generation in range(first_generation, first_generation + config.generations):
         
         gen_dir = run_dir / f"gen_{generation}"
-        gen_dir.mkdir()
+        gen_dir.mkdir(exist_ok=True)
 
         #placeholder Dawid provide results here
         available = integrations.fetch_candidates(limit=config.parents)
         parents = available[:config.parents]
         print_gen_header(generation=generation)
-        print_gen_metadata(generation=generation, name = run_dir.name, 
+        print_gen_metadata(generation=generation, name = run_dir.name,
                            parent_ids=[str(parent.get("id", "-")) for parent in parents], mode = config.mode)
         log.info("Generation %s/%s", generation, total_generations)
-        evolution_models = integrations.select_models_with_bandit(models=validated_models, count=5)
-        proposals = integrations.evolve_with_models(models=evolution_models, parents=parents, generation=generation)
-        if not proposals:
-            log.warning("No evolution proposals for generation %s - stopping", generation)
+        # TODO HERE - integrate with the rest
+        log.info("Fetched %s parent candidate(s)", len(parents))
+        evolution_models = llm_selector.select_models()
+        log.info("Evolving proposals using models: %s", ", ".join(evolution_models)) 
+
+        
+        config_path = run_dir / f"gen_{generation}"
+        rl_modules = integrations._rl_modules()
+        train = rl_modules["train"].train
+        workflow = EvolutionWorkflow(models=evolution_models,
+                                     gen_id=generation,
+                                     history_path=str(config_path / "brainstorming"),
+                                     train_function=train,
+                                     max_debate_rounds=1,
+                                     workers=config.workers)
+        parent_data = integrations.get_parents_data(run_dir)
+        parent_by_gen = {data["gen"]: data for data in parent_data}
+        performances = [data["metrics"]["score"] for data in parent_data]
+        ids = [data["gen"] for data in parent_data]
+        if NUMBER_PARENTS > len(performances):
+            selected_parents = parent_selector.select_parent_ids(len(performances), ids, performances)
+        else:
+            selected_parents = parent_selector.select_parent_ids(NUMBER_PARENTS, ids, performances)
+        result = workflow.execute_crossover([parent_by_gen[gen_id] for gen_id in selected_parents])
+        if not result:
+            log.warning("No accepted evolution proposal for generation %s - continuing", generation)
+            generation_cost = workflow.cost_usd
+            if generation_cost is not None:
+                total_cost += generation_cost
+            print_gen_results(
+                [{"generation": generation, "status": "incorrect", "cost": generation_cost if generation_cost is not None else "-"}],
+                generation=generation,
+            )
             if not any(gen_dir.iterdir()):
                 gen_dir.rmdir()
-            break
-        for proposal in proposals:
-            proposal.setdefault("generation", generation)
-            proposal.setdefault("generation_dir", str(gen_dir))
+            continue
+        parent_selector.update_N(selected_parents)
+        (gen_dir / "algorithm.py").write_text(result["winner_code"], encoding="utf-8")
+        (gen_dir / "config.yaml").write_text(
+            yaml.safe_dump(result["winner_config"], sort_keys=False), encoding="utf-8"
+        )
+        proposals = [{"generation": generation, "generation_dir": str(gen_dir)}]
+        log.info("Training & evaluating %s proposal(s) (workers=%s)...", len(proposals), config.workers)
         evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
-        accepted = integrations.judge_candidates(candidates=evaluated)
+        log.info("Recording %s trained candidate(s)...", len(evaluated))
+        accepted = evaluated
         lineage.extend(accepted)
+        generation_cost = workflow.cost_usd
+        total_cost += generation_cost or 0.0
 
         accepted_ids = [item.get("id") for item in accepted]
         result_rows = []
@@ -206,18 +256,20 @@ def run_evolution(config: RunConfig) -> Path:
             result_rows.append({
                 "generation": generation,
                 "status": status,
+                "average_training_score": candidate.get("average_training_score", ""),
                 "score": candidate.get("score", ""),
-                "cost": candidate_cost if candidate_cost is not None else "-",
+                "cost": generation_cost if generation_cost is not None else "-",
                 "complexity": candidate.get("complexity", "-"),
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))
             })
-
+        log.info("Generation %s complete — %s/%s candidate(s) accepted", generation, len(accepted), len(evaluated))
         print_gen_results(result_rows, generation=generation)
+        winner_candidate = evaluated[0] if evaluated else {}
         _write_json(gen_dir / "metrics.json", {
             "generation": generation,
-            "proposals": len(proposals),
-            "evaluated": len(evaluated),
-            "accepted": len(accepted),
+            "status": winner_candidate.get("status", "pending"),
+            "score": winner_candidate.get("score"),
+            "elo": winner_candidate.get("elo"),
         })
         _write_json(gen_dir / "solutions.json", {
             "generation": generation,
@@ -228,6 +280,13 @@ def run_evolution(config: RunConfig) -> Path:
         })
         _write_json(gen_dir / "lineage.json", {"nodes": lineage})
         _write_json(lineage_path, {"nodes": lineage})
+
+        who_won = 1 if result["winner_id"] == "proposal_1" else 2
+        llm_selector.update_probabilities(evolution_models[0], evolution_models[1], who_won)
+        log.info(
+            "Updated model selection probabilities (winner: %s)",
+            evolution_models[0] if who_won == 1 else evolution_models[1],
+        )
 
     manifest.update({
         "status": "integration-placeholders-completed",

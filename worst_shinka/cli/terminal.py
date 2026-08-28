@@ -223,6 +223,22 @@ def _terminal_width(target: TextIO) -> int:
         return shutil.get_terminal_size((80, 20)).columns
     return 80
 
+def _format_duration(value: object) -> str:
+    if value is None:
+        return "-"
+    try:
+        total_seconds = max(0, round(float(value)))
+    except (TypeError, ValueError):
+        return str(value)
+
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
 def _crop(value: object, width: int) -> str:
     text = str(value)
     if len(text) <= width:
@@ -330,14 +346,15 @@ def print_gen_results(
             check_val(row.get("generation", generation)),
             row.get("status") or "pending",
             check_val(row.get("score", "-")),
+            check_val(row.get("average_training_score", "-")),
             check_val(row.get("cost", "-")),
             check_val(row.get("elo", "-")),
-            check_val(row.get("time", "-"))
+            _format_duration(row.get("time"))
 
         ) for row in rows
     ]
     if not values:
-        values = [(generation, "pending", "-", "-", "-", "-")]
+        values = [(generation, "pending", "-", "-", "-", "-", "-")]
 
     target.write(styled(heading, YELLOW + BOLD, enabled=color) + "\n")
     for value in values:
@@ -345,11 +362,11 @@ def print_gen_results(
         border_color = GREEN if status == "correct" else RED if status == "incorrect" else PURPLE
         target.write(
             _render_table(
-                ("GEN", "STATUS", "SCORE", "COST", "ELO", "TIME"),
+                ("GEN", "STATUS", "SCORE", "AVG SCORE", "COST", "ELO", "TIME"),
                 [value],
                 enabled=color,
                 border_color=border_color,
-                numeric_columns={0, 2, 3, 4, 5},
+                numeric_columns={0, 2, 3, 4, 5, 6},
                 status_column=1
             ) + "\n"
         )

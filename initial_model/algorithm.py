@@ -1,16 +1,27 @@
 """
 algorithm.py
 ------------
-RL policy logic for DQLModel. This is the only file an LLM may change
-between generations — no environment/loop mechanics and no config
-defaults here, only decision logic. Hyperparameters always come from
-the generation's config.yaml, loaded and passed in by train.py.
+RL policy logic for DQLModel. This gen_0 copy is the fixed baseline/greedy
+reference seed — it and its sibling config.yaml are never LLM-generated.
+From generation 1 onward, brainstorming LLMs may propose changes to both
+this file's decision logic and to config.yaml's hyperparameters (values
+and/or new keys) together, as a paired proposal — no environment/loop
+mechanics belong here, only decision logic. Hyperparameters always come
+from the generation's own config.yaml, loaded and passed in by train.py.
 
 Maintained public interface:
   - get_epsilon
   - select_action
   - select_opponent_action
   - update_model
+
+This gen_0 baseline's config.yaml declares these hyperparameters (later
+generations may retune these values and/or introduce new keys):
+- hidden_layers
+- gamma
+- epsilon_start
+- epsilon_end
+- epsilon_decay_episodes
 """
 
 import random

@@ -21,7 +21,7 @@ def _select_action(env, agent, observation, model):
         logits = model(obs)
         return int(torch.argmax(logits, dim=-1).item())
 
-def run_play(gen_id_1=None, gen_id_2=None):
+def run_play(gen_id_1=None, gen_id_2=None, stop_event=None):
     models = {
         "first_0": None,
         "second_0": None,
@@ -53,6 +53,15 @@ def run_play(gen_id_1=None, gen_id_2=None):
 
     # Main game loop
     for agent in env.agent_iter():
+        if stop_event is not None and stop_event.is_set():
+            break
+        if any(
+            event.type == pygame.QUIT
+            or (event.type == pygame.KEYDOWN and event.key == pygame.K_q)
+            for event in pygame.event.get()
+        ):
+            break
+
         # gen informations for agent to make action based on these
         observation, _reward, termination, truncation, _info = env.last()
 
@@ -73,7 +82,6 @@ def run_play(gen_id_1=None, gen_id_2=None):
             surf = pygame.transform.scale(surf, (screen_w * ZOOM, screen_h * ZOOM))
             screen.blit(surf, (0, 0))
             pygame.display.flip()
-            pygame.event.pump()
             clock.tick(RENDER_FPS)
 
     # End of the game

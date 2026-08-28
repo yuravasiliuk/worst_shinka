@@ -1,4 +1,5 @@
 import importlib.util
+import logging
 import os
 import random
 import time
@@ -8,12 +9,28 @@ import yaml
 from pettingzoo.atari import tennis_v3
 
 from model import DQLModel
-from utils import ELO_BASELINE, MAX_CYCLES, _load_model, _load_model_score_history, _model_path, _save_model_score_history
+from utils import (
+    ELO_BASELINE,
+    GREEN,
+    MAX_CYCLES,
+    _format_duration,
+    _load_model,
+    _load_model_score_history,
+    _model_path,
+    _save_model_score_history,
+    progress_done,
+    progress_line,
+)
+
+logger = logging.getLogger(__name__)
 
 # Environment configuration
 OBS_TYPE = "ram"            # Atari RAM observation (128 bytes)
 INPUT_SIZE = 128             # Input size
 TRAINED_AGENT = "first_0"    # Target agent ID in PettingZoo
+
+# How often (in episodes) to refresh the in-place training progress line.
+PROGRESS_LOG_EVERY = 10
 
 # Global execution settings
 GLOBAL_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "global_config.yaml")
@@ -115,21 +132,28 @@ def train(gen_id: int, config_path: str, algorithm_path: str, model_output_path:
         output_size=num_actions,
         hidden_layers=hidden_layers,
     )
-    print(f'\n\nModel device: {model.device}\n\n')
+    logger.info("[gen %s] model device: %s", gen_id, model.device)
 
     # Train against a random past generation (non-transitive matchups are
     # less of a risk than always training against just gen_id - 1). gen0
     # has no past generations, so it trains against random actions.
     if gen_id == 0:
         opponent_model = None
+        opponent_label = "random actions (gen_0 has no history)"
     else:
-        opponent_model = _load_model(_model_path(random.randrange(gen_id)))
+        opponent_gen_id = random.randrange(gen_id)
+        opponent_model = _load_model(_model_path(opponent_gen_id))
+        opponent_label = f"gen_{opponent_gen_id} model"
 
     episodes = global_config["episodes_per_model"]
     max_seconds_per_match = global_config["max_seconds_per_match"]
     log_every = global_config["log_every_n_episodes"]
 
+    logger.info("[gen %s] starting training — %s episodes vs %s", gen_id, episodes, opponent_label)
+
     episode_rewards = []
+    best_reward = float("-inf")
+    train_start = time.time()
     for episode_index in range(episodes):
         epsilon = algorithm.get_epsilon(episode_index, config)
 
@@ -138,13 +162,34 @@ def train(gen_id: int, config_path: str, algorithm_path: str, model_output_path:
         elapsed = time.time() - start_time
 
         if elapsed > max_seconds_per_match:
-            print(
-                f"[train] Warning: episode {episode_index} took {elapsed:.1f}s, "
-                f"exceeding the {max_seconds_per_match}s per-match budget."
+            logger.warning(
+                "[gen %s] episode %s took %.1fs, exceeding the %ss per-match budget.",
+                gen_id, episode_index, elapsed, max_seconds_per_match,
             )
 
         episode_rewards.append(total_reward)
+        best_reward = max(best_reward, total_reward)
 
+        completed = episode_index + 1
+        if completed % PROGRESS_LOG_EVERY == 0 or completed == episodes:
+            window = episode_rewards[-PROGRESS_LOG_EVERY:]
+            avg_reward = sum(window) / len(window)
+            total_elapsed = time.time() - train_start
+            speed = completed / total_elapsed if total_elapsed > 0 else 0.0
+            eta_seconds = (episodes - completed) / speed if speed > 0 else 0.0
+            progress_line(
+                "training",
+                label_color=GREEN,
+                generation=gen_id,
+                progress=f"{completed}/{episodes} episodes ({completed / episodes:.0%})",
+                result=(
+                    f"avg reward {avg_reward:.2f} (best {best_reward:.2f}), "
+                    f"ε={epsilon:.2f}, {speed:.1f} ep/s, ETA {_format_duration(eta_seconds)}"
+                ),
+            )
+
+    progress_done()
+    training_duration = time.time() - train_start
     env.close()
 
     os.makedirs(os.path.dirname(model_output_path), exist_ok=True)
@@ -155,15 +200,21 @@ def train(gen_id: int, config_path: str, algorithm_path: str, model_output_path:
 
     average_score = episode_rewards[-1] if episode_rewards else None
     initial_elo = ELO_BASELINE if gen_id == 0 else None
-    score_history = _load_model_score_history()
-    score_history.append([gen_id, initial_elo, average_score])
-    _save_model_score_history(score_history)
+    initial_score = 0.0 if gen_id == 0 else None
+    if not os.environ.get("WORST_SHINKA_SKIP_HISTORY"):
+        score_history = _load_model_score_history()
+        score_history.append([gen_id, initial_elo, average_score, initial_score, round(training_duration, 2)])
+        _save_model_score_history(score_history)
 
-    print(
-        f"[train] Done. Trained {episodes} episodes, "
-        f"final avg reward (last {min(log_every, episodes)} eps): "
-        f"{np.mean(episode_rewards[-log_every:]):.3f}. "
-        f"Model saved to {model_output_path}."
+    logger.info(
+        "[gen %s] training complete — %s episodes in %s | avg reward (last %s): %.3f | best: %.2f | saved to %s",
+        gen_id,
+        episodes,
+        _format_duration(training_duration),
+        min(log_every, episodes),
+        np.mean(episode_rewards[-log_every:]),
+        best_reward,
+        model_output_path,
     )
 
 

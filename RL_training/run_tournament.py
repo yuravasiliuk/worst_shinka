@@ -1,4 +1,6 @@
+import logging
 import os
+import time
 
 import torch
 from pettingzoo.atari import tennis_v3
@@ -6,16 +8,28 @@ from pettingzoo.atari import tennis_v3
 from utils import (
     ELO_BASELINE,
     MAX_CYCLES,
+    PURPLE,
     RAM_GAMES,
     RESULTS_DIR,
     TOURNAMENT_TABLE_PATH,
+    _format_duration,
     _load_model,
     _load_model_score_history,
     _model_path,
     _save_model_score_history,
+    progress_done,
+    progress_line,
 )
 
+logger = logging.getLogger(__name__)
+
 ELO_K = 32
+
+
+def _tournament_match_task(current_model_path, opponent_model_path):
+    current_model = _load_model(current_model_path)
+    opponent_model = _load_model(opponent_model_path)
+    return _play_match(current_model, opponent_model)
 
 
 def _select_action(observation, model):
@@ -61,12 +75,13 @@ def _save_table(table):
             f.write(";".join("None" if v is None else str(v) for v in row) + "\n")
 
 
-def run_tournament(gen_id):
+def run_tournament(gen_id, workers=1):
     if (gen_id == 0):
         _save_table([[None]])
+        logger.info("[gen 0] tournament skipped — no prior generations to play against")
         return False
 
-    
+
     current_model = _load_model(_model_path(gen_id))
     opponent_models = {i: _load_model(_model_path(i)) for i in range(gen_id)}
 
@@ -80,28 +95,58 @@ def run_tournament(gen_id):
     score_history = _load_model_score_history()
     opponent_elo = {row[0]: (ELO_BASELINE if row[1] is None else row[1]) for row in score_history}
 
+    total_matches = len(opponent_models)
+    logger.info("[gen %s] starting tournament — %s match(es) vs prior generations", gen_id, total_matches)
+    tournament_start = time.time()
+
+    if workers > 1:
+        import multiprocessing
+
+        context = multiprocessing.get_context("spawn")
+        tasks = [(_model_path(gen_id), _model_path(opp_id)) for opp_id in opponent_models]
+        with context.Pool(processes=min(workers, total_matches)) as pool:
+            match_results = pool.starmap(_tournament_match_task, tasks)
+    else:
+        match_results = [
+            _play_match(current_model, opponent_model)
+            for opponent_model in opponent_models.values()
+        ]
+
     actual_total = 0.0
     expected_total = 0.0
-    for opp_id, opponent_model in opponent_models.items():
-        games_current, games_opp = _play_match(current_model, opponent_model)
+    for match_index, ((opp_id, _opponent_model), (games_current, games_opp)) in enumerate(
+        zip(opponent_models.items(), match_results), start=1
+    ):
         table[gen_id][opp_id] = games_current
         table[opp_id][gen_id] = games_opp
 
         if games_current > games_opp:
             actual = 1.0
+            outcome = "win"
         elif games_current < games_opp:
             actual = 0.0
+            outcome = "loss"
         else:
             actual = 0.5
+            outcome = "draw"
         expected = 1 / (1 + 10 ** ((opponent_elo.get(opp_id, ELO_BASELINE) - ELO_BASELINE) / 400))
         actual_total += actual
         expected_total += expected
 
+        progress_line(
+            "tournament",
+            label_color=PURPLE,
+            generation=gen_id,
+            progress=f"match {match_index}/{total_matches} vs gen_{opp_id}",
+            result=f"{games_current}-{games_opp} ({outcome}), elapsed {_format_duration(time.time() - tournament_start)}",
+        )
+
+    progress_done()
     _save_table(table)
 
     # Batch ELO update: one aggregate update for gen_id vs. the whole round,
     # not one update per match.
-    num_matches = len(opponent_models)
+    num_matches = total_matches
     new_elo = ELO_BASELINE + ELO_K * (actual_total / num_matches - expected_total / num_matches)
     for row in score_history:
         if row[0] == gen_id:
@@ -109,6 +154,11 @@ def run_tournament(gen_id):
             break
     _save_model_score_history(score_history)
 
+    logger.info(
+        "🏆 [gen %s] tournament complete — %s match(es) in %s | elo %.0f (%+.0f vs baseline %s)",
+        gen_id, num_matches, _format_duration(time.time() - tournament_start), new_elo, new_elo - ELO_BASELINE, ELO_BASELINE,
+    )
+
     return True
-    
+
 
