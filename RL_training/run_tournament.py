@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 ELO_K = 32
 
 
+def _tournament_match_task(current_model_path, opponent_model_path):
+    current_model = _load_model(current_model_path)
+    opponent_model = _load_model(opponent_model_path)
+    return _play_match(current_model, opponent_model)
+
+
 def _select_action(observation, model):
     with torch.no_grad():
         obs = torch.as_tensor(observation, dtype=torch.float32).unsqueeze(0)
@@ -69,7 +75,7 @@ def _save_table(table):
             f.write(";".join("None" if v is None else str(v) for v in row) + "\n")
 
 
-def run_tournament(gen_id):
+def run_tournament(gen_id, workers=1):
     if (gen_id == 0):
         _save_table([[None]])
         logger.info("[gen 0] tournament skipped — no prior generations to play against")
@@ -93,10 +99,24 @@ def run_tournament(gen_id):
     logger.info("[gen %s] starting tournament — %s match(es) vs prior generations", gen_id, total_matches)
     tournament_start = time.time()
 
+    if workers > 1:
+        import multiprocessing
+
+        context = multiprocessing.get_context("spawn")
+        tasks = [(_model_path(gen_id), _model_path(opp_id)) for opp_id in opponent_models]
+        with context.Pool(processes=min(workers, total_matches)) as pool:
+            match_results = pool.starmap(_tournament_match_task, tasks)
+    else:
+        match_results = [
+            _play_match(current_model, opponent_model)
+            for opponent_model in opponent_models.values()
+        ]
+
     actual_total = 0.0
     expected_total = 0.0
-    for match_index, (opp_id, opponent_model) in enumerate(opponent_models.items(), start=1):
-        games_current, games_opp = _play_match(current_model, opponent_model)
+    for match_index, ((opp_id, _opponent_model), (games_current, games_opp)) in enumerate(
+        zip(opponent_models.items(), match_results), start=1
+    ):
         table[gen_id][opp_id] = games_current
         table[opp_id][gen_id] = games_opp
 

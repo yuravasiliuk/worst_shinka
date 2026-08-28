@@ -112,8 +112,8 @@ def fetch_candidates(*, limit: int) -> list[dict[str, Any]]:
         })
     return candidates[:limit]
 
+def _train_generation(generation_dir: Path, *, tournament: bool, workers: int = 1) -> dict[str, Any]:
 
-def _train_generation(generation_dir: Path, *, tournament: bool) -> dict[str, Any]:
     conf, alg, model = _standard_generation_files(generation_dir)
     gen = _generation_number(generation_dir)
     modules = _rl_modules()
@@ -128,7 +128,7 @@ def _train_generation(generation_dir: Path, *, tournament: bool) -> dict[str, An
             modules["run_training"].run_training(gen, str(conf_input), str(alg_input))
 
     if tournament:
-        modules["run_tournament"].run_tournament(gen)
+        modules["run_tournament"].run_tournament(gen, workers=workers)
     else:
         logger.info("[gen %s] tournament disabled — leaving elo as None", gen)
         score_history = modules["utils"]._load_model_score_history()
@@ -139,6 +139,7 @@ def _train_generation(generation_dir: Path, *, tournament: bool) -> dict[str, An
         modules["utils"]._save_model_score_history(score_history)
 
     modules["run_score_evaluation"].run_score_evaluation(gen)
+
 
     agg = modules["run_aggregate_data"].run_aggregate_data(gen)
 
@@ -169,10 +170,10 @@ def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str,
         "status": "correct"
     }    
 
+
 def train_and_evaluate(
     *, proposals: list[dict[str, Any]], workers: int, tournament: bool = False
 ) -> list[dict[str, Any]]:
-    del workers
     evaluated = []
     for proposal in proposals:
         dir_val = proposal.get("generation_dir")
@@ -181,7 +182,7 @@ def train_and_evaluate(
             if gen is None:
                 raise ValueError("Proposal must contain generation_dir or generation")
             dir_val = _require_run() / f"gen_{gen}"
-        candidate = _train_generation(Path(dir_val), tournament=tournament)
+        candidate = _train_generation(Path(dir_val), workers=workers, tournament=tournament)
         candidate.update({key: value for key, value in proposal.items() if key not in candidate})
         evaluated.append(candidate)
 

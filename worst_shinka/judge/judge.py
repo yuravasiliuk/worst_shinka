@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -19,6 +20,30 @@ _rl_utils = _load_rl_training_utils()
 MAX_CYCLES = _rl_utils.MAX_CYCLES
 RAM_GAMES = _rl_utils.RAM_GAMES
 _load_model = _rl_utils._load_model
+
+
+def _play_match_task(solution_a: str, solution_b: str, match_index: int) -> dict[str, Any]:
+    model_a = _load_model(solution_a)
+    model_b = _load_model(solution_b)
+    judge = Judge()
+    if match_index % 2 == 0:
+        games_a, games_b = judge._play_match(model_a, model_b)
+    else:
+        games_b, games_a = judge._play_match(model_b, model_a)
+
+    if games_a > games_b:
+        winner = "A"
+    elif games_b > games_a:
+        winner = "B"
+    else:
+        winner = "draw"
+
+    return {
+        "match": match_index,
+        "a_games": games_a,
+        "b_games": games_b,
+        "winner": winner,
+    }
 
 @dataclass
 class JudgeConfig:
@@ -48,9 +73,11 @@ class Judge:
         config: Optional[JudgeConfig] = None,
         train_function=None,
         history_path: Optional[str] = None,
+        workers: int = 1,
     ):
         self.config = config or JudgeConfig()
         self.train_function = train_function
+        self.workers = max(1, workers)
 
         self.history_path = Path(
             history_path
@@ -150,40 +177,13 @@ class Judge:
         solution_b: str,
         games: int,
     ) -> list[dict[str, Any]]:
-        model_a = _load_model(solution_a)
-        model_b = _load_model(solution_b)
+        if self.workers == 1:
+            return [_play_match_task(solution_a, solution_b, match_index) for match_index in range(games)]
 
-        results = []
-
-        for match_index in range(games):
-            if match_index % 2 == 0:
-                games_a, games_b = self._play_match(
-                    model_a,
-                    model_b,
-                )
-            else:
-                games_b, games_a = self._play_match(
-                    model_b,
-                    model_a,
-                )
-
-            if games_a > games_b:
-                winner = "A"
-            elif games_b > games_a:
-                winner = "B"
-            else:
-                winner = "draw"
-
-            results.append(
-                {
-                    "match": match_index,
-                    "a_games": games_a,
-                    "b_games": games_b,
-                    "winner": winner,
-                }
-            )
-
-        return results
+        context = multiprocessing.get_context("spawn")
+        tasks = [(solution_a, solution_b, match_index) for match_index in range(games)]
+        with context.Pool(processes=min(self.workers, games)) as pool:
+            return pool.starmap(_play_match_task, tasks)
 
     def _record_winner(
         self,

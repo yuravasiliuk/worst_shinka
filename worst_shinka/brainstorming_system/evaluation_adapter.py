@@ -26,10 +26,12 @@ class BrainstormingEvaluationAdapter:
         self,
         judge: Judge,
         train_function: Callable,
+        workers: int = 1,
     ):
         self._adapter = BrainstormingJudgeAdapter(
             judge=judge,
             train_function=train_function,
+            workers=workers,
         )
 
     def evaluate(
