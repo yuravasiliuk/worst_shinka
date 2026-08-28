@@ -34,7 +34,13 @@ def _default_run_name() -> str:
 def _generation_numbers(run_dir: Path) -> list[int]:
     numbers = []
     for path in run_dir.glob("gen_*"):
-        if not path.is_dir() or not (path / "model.pt").is_file():
+        metrics_file = path / "metrics.json"
+        if (
+            not path.is_dir()
+            or not (path / "model.pt").is_file()
+            or not metrics_file.is_file()
+            or metrics_file.stat().st_size == 0
+        ):
             continue
         try:
             numbers.append(int(path.name.removeprefix("gen_")))
@@ -171,7 +177,7 @@ def run_evolution(config: RunConfig) -> Path:
     for generation in range(first_generation, first_generation + config.generations):
         
         gen_dir = run_dir / f"gen_{generation}"
-        gen_dir.mkdir()
+        gen_dir.mkdir(exist_ok=True)
 
         #placeholder Dawid provide results here
         available = integrations.fetch_candidates(limit=config.parents)

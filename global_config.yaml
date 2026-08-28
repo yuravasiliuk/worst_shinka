@@ -1,5 +1,5 @@
 training:
-  episodes_per_model: 50
+  episodes_per_model: 30
   max_steps_per_episode: 1000
   max_seconds_per_match: 60
   log_every_n_episodes: 100
