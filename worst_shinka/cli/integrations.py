@@ -8,6 +8,8 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Any
+import json
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +50,14 @@ def _rl_modules() -> dict[str, Any]:
     utils.MODEL_SCORE_HISTORY_PATH = str(run_dir / "model_score_history.csv")
 
     modules: dict[str, Any] = {"utils": utils}
-    for name in ("run_training", "run_tournament", "run_score_evaluation", "run_aggregate_data", "run_play", "run_reset"):
+    for name in ("run_training", "run_tournament", "run_score_evaluation","run_aggregate_data", "run_play", "run_reset", "train"):
         modules[name] = importlib.import_module(name)
     modules["run_training"].RESULTS_DIR = str(run_dir)
     modules["run_tournament"].RESULTS_DIR = str(run_dir)
     modules["run_tournament"].TOURNAMENT_TABLE_PATH = str(run_dir / "tournament_table.csv")
     modules["run_aggregate_data"].RESULTS_DIR = str(run_dir)
     modules["run_reset"].RESULTS_DIR = str(run_dir)
+    modules["train"].RESULTS_DIR = str(run_dir)
     return modules
 
 
@@ -110,8 +113,8 @@ def fetch_candidates(*, limit: int) -> list[dict[str, Any]]:
         })
     return candidates[:limit]
 
+def _train_generation(generation_dir: Path, *, tournament: bool, workers: int = 1) -> dict[str, Any]:
 
-def _train_generation(generation_dir: Path, *, tournament: bool) -> dict[str, Any]:
     conf, alg, model = _standard_generation_files(generation_dir)
     gen = _generation_number(generation_dir)
     modules = _rl_modules()
@@ -126,7 +129,7 @@ def _train_generation(generation_dir: Path, *, tournament: bool) -> dict[str, An
             modules["run_training"].run_training(gen, str(conf_input), str(alg_input))
 
     if tournament:
-        modules["run_tournament"].run_tournament(gen)
+        modules["run_tournament"].run_tournament(gen, workers=workers)
     else:
         logger.info("[gen %s] tournament disabled — leaving elo as None", gen)
         score_history = modules["utils"]._load_model_score_history()
@@ -137,6 +140,7 @@ def _train_generation(generation_dir: Path, *, tournament: bool) -> dict[str, An
         modules["utils"]._save_model_score_history(score_history)
 
     modules["run_score_evaluation"].run_score_evaluation(gen)
+
 
     agg = modules["run_aggregate_data"].run_aggregate_data(gen)
 
@@ -167,10 +171,10 @@ def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str,
         "status": "correct"
     }    
 
+
 def train_and_evaluate(
     *, proposals: list[dict[str, Any]], workers: int, tournament: bool = False
 ) -> list[dict[str, Any]]:
-    del workers
     evaluated = []
     for proposal in proposals:
         dir_val = proposal.get("generation_dir")
@@ -179,7 +183,7 @@ def train_and_evaluate(
             if gen is None:
                 raise ValueError("Proposal must contain generation_dir or generation")
             dir_val = _require_run() / f"gen_{gen}"
-        candidate = _train_generation(Path(dir_val), tournament=tournament)
+        candidate = _train_generation(Path(dir_val), workers=workers, tournament=tournament)
         candidate.update({key: value for key, value in proposal.items() if key not in candidate})
         evaluated.append(candidate)
 
@@ -204,16 +208,16 @@ def _model_location(model_path: str) -> tuple[Path, int]:
         raise FileNotFoundError(f"Model does not exist: {path}")
     return path, _generation_number(path.parent)
 
-def play_candidate(*, model_path: str, opponent_path: str | None = None) -> None:
+def play_candidate(*, model_path: str, opponent_path: str | None = None, stop_event: Any = None) -> None:
     model, gen = _model_location(model_path)
     configure_run(model.parent.parent)
     if opponent_path is not None:
         opponent, opponent_gen = _model_location(opponent_path)
         if opponent.parent.parent != model.parent.parent:
             raise ValueError("Both bot models must belong to the same run directory") #update in future not to
-        _rl_modules()["run_play"].run_play(gen, opponent_gen)
+        _rl_modules()["run_play"].run_play(gen, opponent_gen, stop_event=stop_event)
         return
-    _play_human_vs_model(model)
+    _play_human_vs_model(model, stop_event=stop_event)
 
 
 def _human_action(pygame: Any) -> int:
@@ -245,7 +249,7 @@ def _human_action(pygame: Any) -> int:
 
     return action_names.index(name)
 
-def _play_human_vs_model(model_path: Path) -> None:
+def _play_human_vs_model(model_path: Path, stop_event: Any = None) -> None:
     import pygame
     import torch
     from pettingzoo.atari import tennis_v3
@@ -266,6 +270,8 @@ def _play_human_vs_model(model_path: Path) -> None:
 
     try:
         for agent in env.agent_iter():
+            if stop_event is not None and stop_event.is_set():
+                running = False
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or(event.type == pygame.KEYDOWN and event.key == pygame.K_q):
                     running = False
@@ -294,6 +300,53 @@ def _play_human_vs_model(model_path: Path) -> None:
     finally:
         env.close()
         pygame.quit()
+def get_parents_data(run_dir: Path | str) -> list[dict]:
+    run_dir = Path(run_dir)
+    parents_data = []
+    
+    def _sort_key(path: Path) -> int:
+        try:
+            return _generation_number(path)
+        except ValueError:
+            return -1  # non-numeric gen_* match; sort first, harmless since is_dir()/files checks below skip it
+
+    for gen_dir in sorted(run_dir.glob("gen_*"), key=_sort_key):
+        if not gen_dir.is_dir():
+            continue
+
+        algo_file = gen_dir / "algorithm.py"
+        metrics_file = gen_dir / "metrics.json"
+        config_file = gen_dir / "config.yaml"
+
+        if (
+            not algo_file.is_file()
+            or algo_file.stat().st_size == 0
+            or not metrics_file.is_file()
+            or metrics_file.stat().st_size == 0
+            or not config_file.is_file()
+            or config_file.stat().st_size == 0
+        ):
+            continue
+
+        try:
+            algo_code = algo_file.read_text(encoding="utf-8")
+
+            metrics_data = json.loads(metrics_file.read_text(encoding="utf-8"))
+            config_data = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, yaml.YAMLError, OSError):
+            continue
+
+        if not isinstance(config_data, dict):
+            continue
+
+        parents_data.append({
+            "gen": gen_dir.name,
+            "code": algo_code,
+            "metrics": metrics_data,
+            "config": config_data
+        })
+
+    return parents_data
 
 def reset_run(*, run_dir: Path) -> None:
     resolved = configure_run(run_dir)

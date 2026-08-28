@@ -7,5 +7,7 @@ results
 .ipynb_checkpoints/
 .vscodepy
 *.egg-info
+results/
 __pycache__
 .env
+pp13
