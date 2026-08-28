@@ -16,6 +16,15 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def str2bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in ("true", "1", "yes"):
+        return True
+    if normalized in ("false", "0", "no"):
+        return False
+    raise argparse.ArgumentTypeError("must be True or False")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="worst-shinka", 
@@ -32,7 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--generations", type=positive_int, default=5, help="number of evolution generations")
     run.add_argument("--workers", type=positive_int, default=1, help="maximum concurrent workers")
     run.add_argument("--parents", type=positive_int, default=4, help="number of parents requested per evolution")
-   
+    run.add_argument("--tournament", type=str2bool, default=False, metavar="{True,False}",
+                      help="play round-robin tournament matches and update Elo each generation (disabled by default)")
+
     config = subparsers.add_parser("config", help="show setings and manage the OpenRouter API key")
     config_sub = config.add_subparsers(dest="config_command")
     config_sub.add_parser("login", help="save or replace the OpenRouter API key")
@@ -72,7 +83,8 @@ def main(argv: list[str] | None = None) -> int:
                 generations = args.generations,
                 workers = args.workers,
                 parents = args.parents,
-                mode = args.mode
+                mode = args.mode,
+                tournament = args.tournament
             )
             run_dir = run_evolution(config)
             print(f"Run directory: {run_dir}")
