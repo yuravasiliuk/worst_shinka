@@ -55,11 +55,15 @@ def test_brainstorming_judge_adapter_passes_two_proposals_to_training():
         proposal_1="def select_action(): pass",
         proposal_2="def select_action(): return 1",
         gen_id=5,
-        config_path="initial_model/config.yaml",
+        config_1={"gamma": 0.99},
+        config_2={"gamma": 0.95, "learning_rate": 0.01},
         games=3,
     )
 
     assert len(trained) == 2
+
+    assert trained[0]["config_path"].endswith("config_1.yaml")
+    assert trained[1]["config_path"].endswith("config_2.yaml")
 
     assert result["winner_id"] == "proposal-1"
     assert result["metrics"]["A"]["score"] == 0.8

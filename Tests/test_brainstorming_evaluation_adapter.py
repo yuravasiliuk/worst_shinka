@@ -53,7 +53,8 @@ def test_brainstorming_evaluation_adapter_trains_two_proposals_and_judges():
         proposal_1="def get_epsilon(episode_index, hyperparameters): return 0.1",
         proposal_2="def get_epsilon(episode_index, hyperparameters): return 0.2",
         gen_id=1,
-        config_path="initial_model/config.yaml",
+        config_1={"epsilon_start": 0.1},
+        config_2={"epsilon_start": 0.2},
         games=3,
     )
 
@@ -62,8 +63,8 @@ def test_brainstorming_evaluation_adapter_trains_two_proposals_and_judges():
     assert trained[0]["gen_id"] == 1
     assert trained[1]["gen_id"] == 1
 
-    assert trained[0]["config_path"] == "initial_model/config.yaml"
-    assert trained[1]["config_path"] == "initial_model/config.yaml"
+    assert trained[0]["config_path"].endswith("config_1.yaml")
+    assert trained[1]["config_path"].endswith("config_2.yaml")
 
     assert trained[0]["algorithm_path"].endswith("algorithm_1.py")
     assert trained[1]["algorithm_path"].endswith("algorithm_2.py")

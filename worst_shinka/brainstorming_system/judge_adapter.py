@@ -15,7 +15,7 @@ class BrainstormingJudgeAdapter:
         self.judge = judge
         self.train_function = train_function
 
-    def _train_or_none(self, *, gen_id: int, config_path: str, algorithm_path, model_output_path) -> "str | None":
+    def _train_or_none(self, *, gen_id: int, config_path, algorithm_path, model_output_path) -> "str | None":
         """Train one proposal; return None on success or an error summary on failure.
 
         Static pre-flight checks (missing functions, unknown config keys, forbidden
@@ -28,7 +28,7 @@ class BrainstormingJudgeAdapter:
         try:
             self.train_function(
                 gen_id=gen_id,
-                config_path=config_path,
+                config_path=str(config_path),
                 algorithm_path=str(algorithm_path),
                 model_output_path=str(model_output_path),
             )
@@ -41,12 +41,14 @@ class BrainstormingJudgeAdapter:
         proposal_1: str,
         proposal_2: str,
         *,
-        config_path: str,
+        config_1: dict,
+        config_2: dict,
         gen_id: int,
         games: int = 5,
     ) -> dict:
 
         import tempfile
+        import yaml
         from pathlib import Path
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -54,6 +56,9 @@ class BrainstormingJudgeAdapter:
 
             algorithm_1 = tmp_path / "algorithm_1.py"
             algorithm_2 = tmp_path / "algorithm_2.py"
+
+            config_path_1 = tmp_path / "config_1.yaml"
+            config_path_2 = tmp_path / "config_2.yaml"
 
             model_1 = tmp_path / "model_1.pt"
             model_2 = tmp_path / "model_2.pt"
@@ -68,11 +73,14 @@ class BrainstormingJudgeAdapter:
                 encoding="utf-8",
             )
 
+            config_path_1.write_text(yaml.safe_dump(config_1, sort_keys=False), encoding="utf-8")
+            config_path_2.write_text(yaml.safe_dump(config_2, sort_keys=False), encoding="utf-8")
+
             error_1 = self._train_or_none(
-                gen_id=gen_id, config_path=config_path, algorithm_path=algorithm_1, model_output_path=model_1
+                gen_id=gen_id, config_path=config_path_1, algorithm_path=algorithm_1, model_output_path=model_1
             )
             error_2 = self._train_or_none(
-                gen_id=gen_id, config_path=config_path, algorithm_path=algorithm_2, model_output_path=model_2
+                gen_id=gen_id, config_path=config_path_2, algorithm_path=algorithm_2, model_output_path=model_2
             )
 
             if error_1 and error_2:

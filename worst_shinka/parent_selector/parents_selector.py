@@ -42,7 +42,9 @@ class Selector_Parents():
     def select_parent_ids(self, k, ids, performances):
         """
         k - number of parents to select
-        ids - ids of possible parents to choose from
+        ids - ids of possible parents to choose from (must be stable identifiers, e.g. "gen_3" -
+              not positions into a list that can reorder/shrink across calls, since self.N persists
+              across calls and is keyed by these ids)
         performances - scores of parents, corresponding to ids
         """
         s = self.calculate_s(performances)
@@ -51,6 +53,5 @@ class Selector_Parents():
         p = self.calculate_p(w)
 
         selected_parent_ids = np.random.choice(ids, size = k, replace = False, p = p).tolist()
-        self.update_N(selected_parent_ids)
 
         return selected_parent_ids
