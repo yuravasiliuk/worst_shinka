@@ -269,13 +269,14 @@ def validate_openrouter_setup(
         raise OpenRouterError(f"🛑 OpenRouter API key has no spending limit remaining. Details {cache_path}")
 
     invalid = [item["id"] for item in invalid_models]
+    valid_list = [item["id"] for item in valid_models]
     if len(valid_models) < MIN_VALID_MODELS:
         raise OpenRouterError(
             f"❌ At least {MIN_VALID_MODELS} OpenRouter models must be valid; "
             f"got {len(valid_models)}. Invalid models: {', '.join(invalid)}. Details: {cache_path}"
         )
     if invalid:
-        log.warning("⚠️ Ignoring %s invalid OpenRouter models; continuing with %s valid models: %s", len(invalid), len(valid_models), ", ".join(invalid),)
+        log.info("ℹ️ Choosed %s suitable OpenRouter models out of %s provided; continuing with: %s", len(valid_models), len(invalid) + len(valid_models), ", ".join(valid_list))
     log.info("✅ Validated %s OpenRouter models; details saved to %s", len(validations), cache_path)
 
     return cache_path

@@ -49,7 +49,8 @@ def _initial_lineage(config: RunConfig) -> list[dict[str, Any]]:
         "parent_id": None,
         "generation": 0,
         "model": config.initial_model,
-        "score": None,
+        "average_training_score": None,
+        "score": 0.0,
         "status": "initial-placeholder"
     }]
 
@@ -106,7 +107,8 @@ def run_evolution(config: RunConfig) -> Path:
         if initial_src.is_dir():
             integrations.prepare_initial_generation(source_dir=initial_src, generation_dir=gen_dir)
             initial_candidates = integrations.train_and_evaluate(
-                proposals=[{"generation": 0, "generation_dir": str(gen_dir)}], workers=1
+                proposals=[{"generation": 0, "generation_dir": str(gen_dir)}], workers=1,
+                tournament=config.tournament
             )
             if initial_candidates:
                 lineage = initial_candidates
@@ -114,6 +116,7 @@ def run_evolution(config: RunConfig) -> Path:
         _write_json(gen_dir / "metrics.json", {
             "generation": 0,
             "status": initial_node.get("status", "initial-placeholder"),
+            "average_training_score": initial_node.get("average_training_score"),
             "score": initial_node.get("score"),
             "elo": initial_node.get("elo")
         }) 
@@ -131,7 +134,8 @@ def run_evolution(config: RunConfig) -> Path:
             [{
                 "generation": 0,
                 "status": initial_status,
-                "score":initial.get("score", "-") if initial.get("score") is not None else "-",
+                "average_training_score": initial.get("average_training_score", "-") if initial.get("average_training_score") is not None else "-",
+                "score": initial.get("score", "-") if initial.get("score") is not None else "-",
                 "cost": initial.get("cost", "-"),
                 "elo": initial.get("elo", "-"),
                 "time": initial.get("time", "-")
@@ -234,6 +238,7 @@ def run_evolution(config: RunConfig) -> Path:
             result_rows.append({
                 "generation": generation,
                 "status": status,
+                "average_training_score": candidate.get("average_training_score", ""),
                 "score": candidate.get("score", ""),
                 "cost": candidate_cost if candidate_cost is not None else "-",
                 "complexity": candidate.get("complexity", "-"),

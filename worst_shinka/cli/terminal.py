@@ -346,6 +346,7 @@ def print_gen_results(
             check_val(row.get("generation", generation)),
             row.get("status") or "pending",
             check_val(row.get("score", "-")),
+            check_val(row.get("average_training_score", "-")),
             check_val(row.get("cost", "-")),
             check_val(row.get("elo", "-")),
             _format_duration(row.get("time"))
@@ -353,7 +354,7 @@ def print_gen_results(
         ) for row in rows
     ]
     if not values:
-        values = [(generation, "pending", "-", "-", "-", "-")]
+        values = [(generation, "pending", "-", "-", "-", "-", "-")]
 
     target.write(styled(heading, YELLOW + BOLD, enabled=color) + "\n")
     for value in values:
@@ -361,11 +362,11 @@ def print_gen_results(
         border_color = GREEN if status == "correct" else RED if status == "incorrect" else PURPLE
         target.write(
             _render_table(
-                ("GEN", "STATUS", "SCORE", "COST", "ELO", "TIME"),
+                ("GEN", "STATUS", "SCORE", "AVG SCORE", "COST", "ELO", "TIME"),
                 [value],
                 enabled=color,
                 border_color=border_color,
-                numeric_columns={0, 2, 3, 4, 5},
+                numeric_columns={0, 2, 3, 4, 5, 6},
                 status_column=1
             ) + "\n"
         )
