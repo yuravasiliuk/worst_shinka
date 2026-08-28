@@ -328,7 +328,8 @@ class EvolutionWorkflow:
                 rejection_reason = result["training_error"]
                 continue
 
-            print(f"Looping back. Metrics {result["metrics"]}")
-            rejection_reason = f"Lack of sufficient winner. Metrics of both models: {result["metrics"]}"
+            print(f"Looping back. Metrics {result['metrics']}")
+            rejection_reason = f"Lack of sufficient winner. Metrics of both models: {result['metrics']}"
 
-        raise RuntimeError("Failed to satisfy Judge within max retries.")
+        print("Failed to satisfy Judge within max retries; continuing with the next generation.")
+        return None
