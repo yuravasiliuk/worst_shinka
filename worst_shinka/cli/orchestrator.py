@@ -31,6 +31,10 @@ def _default_run_name() -> str:
     return datetime.now(timezone.utc).strftime("run-%Y%m%d-%H%M%S-%f")
 
 
+def _format_cost(value: float | None) -> str:
+    return "-" if value is None else f"{value:.3g}$"
+
+
 def _generation_numbers(run_dir: Path) -> list[int]:
     numbers = []
     for path in run_dir.glob("gen_*"):
@@ -217,7 +221,7 @@ def run_evolution(config: RunConfig) -> Path:
             if generation_cost is not None:
                 total_cost += generation_cost
             print_gen_results(
-                [{"generation": generation, "status": "incorrect", "cost": generation_cost if generation_cost is not None else "-"}],
+                [{"generation": generation, "status": "incorrect", "cost": _format_cost(generation_cost)}],
                 generation=generation,
             )
             if not any(gen_dir.iterdir()):
@@ -258,7 +262,7 @@ def run_evolution(config: RunConfig) -> Path:
                 "status": status,
                 "average_training_score": candidate.get("average_training_score", ""),
                 "score": candidate.get("score", ""),
-                "cost": generation_cost if generation_cost is not None else "-",
+                "cost": _format_cost(generation_cost),
                 "complexity": candidate.get("complexity", "-"),
                 "time": candidate.get("time", candidate.get("duration_seconds", "-"))
             })
