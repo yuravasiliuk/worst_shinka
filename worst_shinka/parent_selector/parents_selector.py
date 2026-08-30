@@ -1,57 +1,56 @@
+from __future__ import annotations
+
 import numpy as np
-import statistics as stats
 
-#performances are taken from each generation folder
-#also somehow we should keep track of number of children of each model 
-#maybe to create a file with structure: (model_id, generation_number, number_children, performance)
 
-class Selector_Parents():
-    def __init__(self, lmbd=1.0):
-        self.lmbd = lmbd 
-        self.N = {} #dictionary that keeps track of number of children for each model_id
+
+
+class Selector_Parents:
+    """Weighted sampling of distinct parents based on tournament strength."""
+
+
+    def __init__(self, temperature: float = 0.35, exploration: float = 0.2, rng=None):
+        if temperature <= 0:
+            raise ValueError("temperature must be greater than zero")
+        if not 0 <= exploration < 1:
+            raise ValueError("exploration must be in [0, 1)")
+        self.temperature = temperature
+        self.exploration = exploration
+        self.rng = rng if rng is not None else np.random.default_rng()
+        self.N = {}
+
 
     def update_N(self, selected_parent_ids):
-        for id in selected_parent_ids:
-            if id in self.N:
-                self.N[id] += 1
-            else:
-                self.N[id] = 1
-        
-    def calculate_s(self, performances):
-        alpha_0 = stats.median(performances)
-        s = 1 / (1 + np.exp(-1*self.lmbd*(np.array(performances) - alpha_0)))
-        return s
+        for parent_id in selected_parent_ids:
+            self.N[parent_id] = self.N.get(parent_id, 0) + 1
 
-    def calculate_h(self, ids):
-        h = []
-        for id in ids:
-            if id in self.N:
-                h.append(1 / (1 + self.N[id]))
-            else:
-                h.append(1)
-        return h
 
-    def calculate_w(self, s, h):
-        w = s*h
-        return w
+    def calculate_p(self, performances):
+        values = np.asarray(performances, dtype=float)
+        if values.ndim != 1 or len(values) == 0:
+            raise ValueError("performances must be a non-empty one-dimensional sequence")
+        finite = np.isfinite(values)
+        if not finite.any():
+            return np.full(len(values), 1.0 / len(values))
+        floor = float(np.min(values[finite]))
+        values = np.where(finite, values, floor)
+        spread = float(np.std(values))
+        if spread < 1e-12:
+            probabilities = np.full(len(values), 1.0 / len(values))
+        else:
+            logits = (values - float(np.max(values))) / (spread * self.temperature)
+            weights = np.exp(np.clip(logits, -50, 0))
+            probabilities = weights / weights.sum()
+        # A small exploration share prevents permanently excluding weaker models.
+        uniform = np.full(len(values), 1.0 / len(values))
+        return (1.0 - self.exploration) * probabilities + self.exploration * uniform
 
-    def calculate_p(self, w):
-        p = w / np.sum(w)
-        return p
 
     def select_parent_ids(self, k, ids, performances):
-        """
-        k - number of parents to select
-        ids - ids of possible parents to choose from (must be stable identifiers, e.g. "gen_3" -
-              not positions into a list that can reorder/shrink across calls, since self.N persists
-              across calls and is keyed by these ids)
-        performances - scores of parents, corresponding to ids
-        """
-        s = self.calculate_s(performances)
-        h = self.calculate_h(ids)
-        w = self.calculate_w(s, h)
-        p = self.calculate_p(w)
-
-        selected_parent_ids = np.random.choice(ids, size = k, replace = False, p = p).tolist()
-
-        return selected_parent_ids
+        if len(ids) != len(performances):
+            raise ValueError("ids and performances must have the same length")
+        if not ids:
+            raise ValueError("at least one parent candidate is required")
+        count = min(max(1, int(k)), len(ids))
+        probabilities = self.calculate_p(performances)
+        return self.rng.choice(ids, size=count, replace=False, p=probabilities).tolist()

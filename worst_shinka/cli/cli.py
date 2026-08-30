@@ -27,7 +27,7 @@ def str2bool(value: str) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="worst-shinka", 
+        prog="worst-shinka",
         description="Command interface for the Worst-Shinka system."
         )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -41,8 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--generations", type=positive_int, default=5, help="number of evolution generations")
     run.add_argument("--workers", type=positive_int, default=1, help="maximum concurrent workers")
     run.add_argument("--parents", type=positive_int, default=4, help="number of parents requested per evolution")
-    run.add_argument("--tournament", type=str2bool, default=False, metavar="{True,False}",
-                      help="play round-robin tournament matches and update Elo each generation (disabled by default)")
+    run.add_argument("--tournament", type=str2bool, default=True, metavar="{True,False}",
+                      help="play a full round-robin tournament and update all ratings each generation (enabled by default)")
+
 
     config = subparsers.add_parser("config", help="show setings and manage the OpenRouter API key")
     config_sub = config.add_subparsers(dest="config_command")

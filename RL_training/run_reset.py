@@ -1,6 +1,7 @@
 """
 run_reset.py
 
+
 Resets training progress: deletes every generation folder except gen_0,
 deletes gen_0's generated training artifacts (model.pt, training_logs.txt)
 while keeping its config.yaml/algorithm.py, and clears the shared
@@ -13,7 +14,9 @@ import shutil
 from utils import RESULTS_DIR
 
 GEN0_ARTIFACTS = ["model.pt", "training_logs.txt"]
-SHARED_RESULT_FILES = ["tournament_table.csv", "model_score_history.csv"]
+SHARED_RESULT_FILES = ["tournament_table.csv", "tournament_results.csv", "model_score_history.csv"]
+
+
 
 
 def run_reset() -> None:

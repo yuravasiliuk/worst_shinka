@@ -39,7 +39,7 @@ class RunConfig:
     workers: int = 1
     parents: int = 1
     mode: str = "medium"
-    tournament: bool = False
+    tournament: bool = True
 
     def validate(self) -> "RunConfig":
         if self.mode not in MODEL_MODES:
@@ -70,5 +70,3 @@ class RunConfig:
 
     def resolved_models(self) -> tuple[str, ...]:
         return self.models if self.models is not None else load_system_assigned_models()
-
-    

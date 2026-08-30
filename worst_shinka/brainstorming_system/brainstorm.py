@@ -209,10 +209,11 @@ def _has_try_except(code: str) -> bool:
 
 
 class BrainstormingPipeline:
-    def __init__(self, model_a: str, model_b: str,config_path, max_debate_rounds: int = 2):
+    def __init__(self, model_a: str, model_b: str, config_path, max_debate_rounds: int = 2, max_tokens: int = 8192):
         self.model_a = model_a
         self.model_b = model_b
         self.max_debate_rounds = max_debate_rounds
+        self.max_tokens = max_tokens
         self.path = config_path
         self.cost_usd = 0.0
         self.cost_available = False
@@ -230,8 +231,12 @@ class BrainstormingPipeline:
             pass
 
     def _call_llm(self, model: str, system_prompt: str, user_prompt: str) -> str:
+        if self.max_tokens <= 0:
+            raise ValueError("max_tokens must be greater than zero")
+
         response = client.chat.completions.create(
             model=model,
+            max_tokens=self.max_tokens,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}

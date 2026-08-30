@@ -101,7 +101,7 @@ def fetch_candidates(*, limit: int) -> list[dict[str, Any]]:
     candidates = []
     for gen, elo, average_training_score, score, duration in reversed(rows):
         model = _require_run() / f"gen_{gen}" / "model.pt"
-        candidates.append({
+        candidate = {
             "id": f"model-{gen}",
             "generation": gen,
             "model": str(model),
@@ -110,7 +110,9 @@ def fetch_candidates(*, limit: int) -> list[dict[str, Any]]:
             "elo": elo,
             "time": duration,
             "status": "correct" if model.is_file() else "incorrect"
-        })
+        }
+        if candidate["status"] == "correct":
+            candidates.append(candidate)
     return candidates[:limit]
 
 def _train_generation(generation_dir: Path, *, tournament: bool, workers: int = 1) -> dict[str, Any]:
@@ -130,6 +132,8 @@ def _train_generation(generation_dir: Path, *, tournament: bool, workers: int = 
 
     if tournament:
         modules["run_tournament"].run_tournament(gen, workers=workers)
+        # Tournament score is the canonical cross-generation quality metric.
+        # Do not overwrite it with the old median-opponent score evaluation.
     else:
         logger.info("[gen %s] tournament disabled — leaving elo as None", gen)
         score_history = modules["utils"]._load_model_score_history()
@@ -138,13 +142,31 @@ def _train_generation(generation_dir: Path, *, tournament: bool, workers: int = 
                 row[1] = None
                 break
         modules["utils"]._save_model_score_history(score_history)
-
-    modules["run_score_evaluation"].run_score_evaluation(gen)
+        modules["run_score_evaluation"].run_score_evaluation(gen)
 
 
     agg = modules["run_aggregate_data"].run_aggregate_data(gen)
 
-    return _candidate_from_aggregate(gen, model, agg)
+
+    candidate = _candidate_from_aggregate(gen, model, agg)
+    metrics = _read_json_file(_require_run() / f"gen_{gen}" / "metrics.json")
+    if metrics:
+        for key in ("wins", "losses", "draws", "matches", "win_rate", "score", "elo"):
+            if key in metrics:
+                candidate[key] = metrics[key]
+    return candidate
+
+
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 
 
 def _candidate_from_aggregate(generation: int, model: Path, aggregate: dict[str, Any]) -> dict[str, Any]:
@@ -242,8 +264,8 @@ def _human_action(pygame: Any) -> int:
         direction = "RIGHT"
     elif left:
         direction = "LEFT"
-    action_names = ["NOOP", "FIRE", "UP", "RIGHT", "LEFT", "DOWN", "UPRIGHT", "UPLEFT", 
-                    "DOWNRIGHT", "DOWNLEFT", "UPFIRE", "RIGHTFIRE", "LEFTFIRE", "DOWNFIRE", 
+    action_names = ["NOOP", "FIRE", "UP", "RIGHT", "LEFT", "DOWN", "UPRIGHT", "UPLEFT",
+                    "DOWNRIGHT", "DOWNLEFT", "UPFIRE", "RIGHTFIRE", "LEFTFIRE", "DOWNFIRE",
                     "UPRIGHTFIRE", "UPLEFTFIRE", "DOWNRIGHTFIRE", "DOWNLEFTFIRE"]
     name = f"{direction}FIRE" if direction and fire else direction or ("FIRE" if fire else "NOOP")
 
@@ -281,7 +303,7 @@ def _play_human_vs_model(model_path: Path, stop_event: Any = None) -> None:
             observation, _reward, termination, truncation, _info = env.last()
             done = termination or truncation
             is_last = bool(env.agents) and agent == env.agents[-1]
-            if done: 
+            if done:
                 action = None
             elif agent == "first_0":
                 action = _human_action(pygame)
@@ -303,7 +325,7 @@ def _play_human_vs_model(model_path: Path, stop_event: Any = None) -> None:
 def get_parents_data(run_dir: Path | str) -> list[dict]:
     run_dir = Path(run_dir)
     parents_data = []
-    
+   
     def _sort_key(path: Path) -> int:
         try:
             return _generation_number(path)
@@ -336,7 +358,12 @@ def get_parents_data(run_dir: Path | str) -> list[dict]:
         except (json.JSONDecodeError, yaml.YAMLError, OSError):
             continue
 
-        if not isinstance(config_data, dict):
+
+        if not isinstance(config_data, dict) or not isinstance(metrics_data, dict):
+            continue
+
+
+        if metrics_data.get("status") != "correct" or not (gen_dir / "model.pt").is_file():
             continue
 
         parents_data.append({

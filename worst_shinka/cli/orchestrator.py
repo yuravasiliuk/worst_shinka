@@ -16,7 +16,6 @@ import yaml
 from pathlib import Path
 from worst_shinka.parent_selector.parents_selector import Selector_Parents
 log = logging.getLogger(__name__)
-NUMBER_PARENTS = 2
 class _PathEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Any:
         if isinstance(obj, Path):
@@ -37,7 +36,6 @@ def _generation_numbers(run_dir: Path) -> list[int]:
         metrics_file = path / "metrics.json"
         if (
             not path.is_dir()
-            or not (path / "model.pt").is_file()
             or not metrics_file.is_file()
             or metrics_file.stat().st_size == 0
         ):
@@ -59,6 +57,18 @@ def _initial_lineage(config: RunConfig) -> list[dict[str, Any]]:
         "score": 0.0,
         "status": "initial-placeholder"
     }]
+
+
+def _generation_result_row(candidate: dict[str, Any], *, generation: int, generation_cost: Any = None) -> dict[str, Any]:
+    return {
+        "generation": candidate.get("generation", generation),
+        "status": candidate.get("status") or "pending",
+        "average_training_score": candidate.get("average_training_score"),
+        "score": candidate.get("score"),
+        "cost": generation_cost if generation_cost is not None else candidate.get("cost"),
+        "elo": candidate.get("elo"),
+        "time": candidate.get("time", candidate.get("duration_seconds")),
+    }
 
 
 def run_evolution(config: RunConfig) -> Path:
@@ -125,7 +135,7 @@ def run_evolution(config: RunConfig) -> Path:
             "average_training_score": initial_node.get("average_training_score"),
             "score": initial_node.get("score"),
             "elo": initial_node.get("elo")
-        }) 
+        })
         _write_json(gen_dir / "solutions.json", {"generation": 0, "solutions": lineage})
         _write_json(lineage_path, {"nodes": lineage})
         generations = [0]
@@ -149,7 +159,8 @@ def run_evolution(config: RunConfig) -> Path:
             generation=0,
             heading="INITIAL GENERATION"
         )
-    
+   
+
 
     manifest_path = run_dir / "run.json"
     if manifest_path.exists():
@@ -176,23 +187,13 @@ def run_evolution(config: RunConfig) -> Path:
     llm_selector = Selector_LLM(validated_models)
     parent_selector = Selector_Parents()
     for generation in range(first_generation, first_generation + config.generations):
-        
+
         gen_dir = run_dir / f"gen_{generation}"
         gen_dir.mkdir(exist_ok=True)
 
-        #placeholder Dawid provide results here
-        available = integrations.fetch_candidates(limit=config.parents)
-        parents = available[:config.parents]
-        print_gen_header(generation=generation)
-        print_gen_metadata(generation=generation, name = run_dir.name,
-                           parent_ids=[str(parent.get("id", "-")) for parent in parents], mode = config.mode)
-        log.info("Generation %s/%s", generation, total_generations)
-        # TODO HERE - integrate with the rest
-        log.info("Fetched %s parent candidate(s)", len(parents))
         evolution_models = llm_selector.select_models()
-        log.info("Evolving proposals using models: %s", ", ".join(evolution_models)) 
+        log.info("Evolving proposals using models: %s", ", ".join(evolution_models))
 
-        
         config_path = run_dir / f"gen_{generation}"
         rl_modules = integrations._rl_modules()
         train = rl_modules["train"].train
@@ -204,25 +205,67 @@ def run_evolution(config: RunConfig) -> Path:
                                      workers=config.workers)
         parent_data = integrations.get_parents_data(run_dir)
         parent_by_gen = {data["gen"]: data for data in parent_data}
-        performances = [data["metrics"]["score"] for data in parent_data]
+        performances = []
+        for data in parent_data:
+            value = data["metrics"].get("score")
+            if value is None:
+                value = data["metrics"].get("elo", 0.0)
+            performances.append(value)
         ids = [data["gen"] for data in parent_data]
-        if NUMBER_PARENTS > len(performances):
-            selected_parents = parent_selector.select_parent_ids(len(performances), ids, performances)
-        else:
-            selected_parents = parent_selector.select_parent_ids(NUMBER_PARENTS, ids, performances)
+        parent_count = min(generation, config.parents, len(parent_data))
+        selected_parents = parent_selector.select_parent_ids(parent_count, ids, performances)
+        print_gen_header(generation=generation)
+        print_gen_metadata(generation=generation, name = run_dir.name,
+                           parent_ids=[str(parent_id) for parent_id in selected_parents], mode = config.mode)
+        log.info("Generation %s/%s", generation, total_generations)
         log.info("Selected parents for generation %s: %s", generation, ", ".join(selected_parents))
+        os.environ["WORST_SHINKA_PARENT_GENERATIONS"] = ",".join(selected_parents)
         result = workflow.execute_crossover([parent_by_gen[gen_id] for gen_id in selected_parents])
         if not result:
             log.warning("No accepted evolution proposal for generation %s - continuing", generation)
             generation_cost = workflow.cost_usd
             if generation_cost is not None:
                 total_cost += generation_cost
+            selected_parent_model_ids = [
+                f"model-{str(parent_id).removeprefix('gen_')}"
+                for parent_id in selected_parents
+            ]
+            failed_node = {
+                "id": f"model-{generation}",
+                "generation": generation,
+                "parent_id": selected_parent_model_ids[0] if selected_parent_model_ids else None,
+                "parent_ids": selected_parent_model_ids,
+                "status": "incorrect",
+                "score": None,
+                "elo": None,
+                "models": evolution_models,
+                "cost": generation_cost,
+                "failure_reason": "No proposal was accepted by the evolution judge",
+            }
+            lineage.append(failed_node)
+            _write_json(gen_dir / "metrics.json", {
+                "generation": generation,
+                "status": "incorrect",
+                "score": None,
+                "elo": None,
+                "cost": generation_cost,
+                "failure_reason": failed_node["failure_reason"],
+            })
+            _write_json(gen_dir / "solutions.json", {
+                "generation": generation,
+                "models": evolution_models,
+                "parents": selected_parent_model_ids,
+                "evaluated": [],
+                "accepted": [],
+                "status": "incorrect",
+                "failure_reason": failed_node["failure_reason"],
+            })
+            _write_json(gen_dir / "lineage.json", {"nodes": lineage})
+            _write_json(lineage_path, {"nodes": lineage})
             print_gen_results(
                 [{"generation": generation, "status": "incorrect", "cost": generation_cost if generation_cost is not None else "-"}],
                 generation=generation,
             )
-            if not any(gen_dir.iterdir()):
-                gen_dir.rmdir()
             continue
         parent_selector.update_N(selected_parents)
         log.info("Generation %s: brainstorming winner is %s", generation, result["winner_id"])
@@ -232,9 +275,32 @@ def run_evolution(config: RunConfig) -> Path:
         )
         proposals = [{"generation": generation, "generation_dir": str(gen_dir)}]
         log.info("Training & evaluating %s proposal(s) (workers=%s)...", len(proposals), config.workers)
-        evaluated = integrations.train_and_evaluate(proposals=proposals, workers=config.workers)
+        evaluated = integrations.train_and_evaluate(
+            proposals=proposals,
+            workers=config.workers,
+            tournament=config.tournament,
+        )
         log.info("Recording %s trained candidate(s)...", len(evaluated))
         accepted = evaluated
+        selected_parent_model_ids = [
+            f"model-{str(parent_id).removeprefix('gen_')}"
+            for parent_id in selected_parents
+        ]
+        for candidate in evaluated:
+            candidate["parent_ids"] = selected_parent_model_ids
+            candidate["parent_id"] = selected_parent_model_ids[0] if selected_parent_model_ids else None
+        # A full tournament refreshes ratings for every old generation too.
+        for node in lineage:
+            node_generation = node.get("generation")
+            if node_generation is None:
+                continue
+            metrics_file = run_dir / f"gen_{node_generation}" / "metrics.json"
+            if not metrics_file.is_file():
+                continue
+            refreshed = json.loads(metrics_file.read_text(encoding="utf-8"))
+            for key in ("wins", "losses", "draws", "matches", "win_rate", "score", "elo"):
+                if key in refreshed:
+                    node[key] = refreshed[key]
         lineage.extend(accepted)
         generation_cost = workflow.cost_usd
         total_cost += generation_cost or 0.0
@@ -255,15 +321,12 @@ def run_evolution(config: RunConfig) -> Path:
                 accepted_candidate = candidate in accepted or (
                     candidate_id is not None and candidate_id in accepted_ids)
                 status = "correct" if accepted_candidate else "incorrect"
-            result_rows.append({
-                "generation": generation,
+            result_rows.append(_generation_result_row({
+                **candidate,
                 "status": status,
-                "average_training_score": candidate.get("average_training_score", ""),
-                "score": candidate.get("score", ""),
-                "cost": generation_cost if generation_cost is not None else "-",
-                "complexity": candidate.get("complexity", "-"),
-                "time": candidate.get("time", candidate.get("duration_seconds", "-"))
-            })
+                "cost": generation_cost if generation_cost is not None else candidate.get("cost", "-"),
+                "generation": generation,
+            }, generation=generation, generation_cost=generation_cost))
         log.info("Generation %s complete — %s/%s candidate(s) accepted", generation, len(accepted), len(evaluated))
         print_gen_results(result_rows, generation=generation)
         winner_candidate = evaluated[0] if evaluated else {}
@@ -272,6 +335,11 @@ def run_evolution(config: RunConfig) -> Path:
             "status": winner_candidate.get("status", "pending"),
             "score": winner_candidate.get("score"),
             "elo": winner_candidate.get("elo"),
+            "wins": winner_candidate.get("wins"),
+            "losses": winner_candidate.get("losses"),
+            "draws": winner_candidate.get("draws"),
+            "matches": winner_candidate.get("matches"),
+            "win_rate": winner_candidate.get("win_rate"),
         })
         _write_json(gen_dir / "solutions.json", {
             "generation": generation,

@@ -4,8 +4,6 @@ import os
 from utils import RESULTS_DIR
 
 logger = logging.getLogger(__name__)
-
-
 def run_aggregate_data(gen_id: int) -> dict:
     #Path to this generation's folder
     gen_folder = os.path.join(RESULTS_DIR, f"gen_{gen_id}")
@@ -38,6 +36,15 @@ def run_aggregate_data(gen_id: int) -> dict:
     tournament_data = _read_tournament_table(tournament_path)
     checklist.append("tournament_table.csv")
 
+    standings_path = os.path.join(RESULTS_DIR, "tournament_results.csv")
+    if os.path.isfile(standings_path):
+        with open(standings_path, "r") as f:
+            tournament_results = f.read()
+        checklist.append("tournament_results.csv")
+    else:
+        tournament_results = ""
+
+
     # model_score_history.csv: returned as raw text
     score_history_path = os.path.join(RESULTS_DIR, "model_score_history.csv")
     if not os.path.isfile(score_history_path):
@@ -58,6 +65,7 @@ def run_aggregate_data(gen_id: int) -> dict:
         "algorithm": algorithm_data,
         "training_logs": training_logs_data,
         "tournament_table": tournament_data,
+        "tournament_results": tournament_results,
         "model_score_history": score_history_data,
     }
 
