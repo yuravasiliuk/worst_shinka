@@ -45,6 +45,7 @@ def _play_match(model_a, model_b):
     env = tennis_v3.env(render_mode=None, obs_type="ram", max_cycles=MAX_CYCLES)
     env.reset()
     ale = env.unwrapped.ale
+    agents_list = env.agents.copy()  # Keep track of all agents to ensure both act each frame
     models = {"first_0": model_a, "second_0": model_b}
     try:
         for agent in env.agent_iter():

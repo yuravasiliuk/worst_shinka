@@ -231,13 +231,15 @@ def _model_location(model_path: str) -> tuple[Path, int]:
     return path, _generation_number(path.parent)
 
 def play_candidate(*, model_path: str, opponent_path: str | None = None, stop_event: Any = None) -> None:
-    model, gen = _model_location(model_path)
+    model, _ = _model_location(model_path)
     configure_run(model.parent.parent)
     if opponent_path is not None:
-        opponent, opponent_gen = _model_location(opponent_path)
-        if opponent.parent.parent != model.parent.parent:
-            raise ValueError("Both bot models must belong to the same run directory") #update in future not to
-        _rl_modules()["run_play"].run_play(gen, opponent_gen, stop_event=stop_event)
+        opponent, _ = _model_location(opponent_path)
+        _rl_modules()["run_play"].run_play(
+            model_path=str(model),
+            opponent_path=str(opponent),
+            stop_event=stop_event,
+        )
         return
     _play_human_vs_model(model, stop_event=stop_event)
 
@@ -281,6 +283,7 @@ def _play_human_vs_model(model_path: Path, stop_event: Any = None) -> None:
     env = tennis_v3.env(render_mode="rgb_array", obs_type = "ram", max_cycles=modules["utils"].MAX_CYCLES)
     env.reset()
     ale = env.unwrapped.ale
+    agents_list = env.agents.copy()  # Keep track of all agents to ensure both act each frame
     crop_top, crop_left, zoom, fps = 4, 8, 4, 30
     screen_h = ale.getScreenDims()[1] - crop_top
     screen_w = ale.getScreenDims()[0] - crop_left
@@ -302,7 +305,7 @@ def _play_human_vs_model(model_path: Path, stop_event: Any = None) -> None:
 
             observation, _reward, termination, truncation, _info = env.last()
             done = termination or truncation
-            is_last = bool(env.agents) and agent == env.agents[-1]
+            is_last = agent == agents_list[-1]
             if done:
                 action = None
             elif agent == "first_0":

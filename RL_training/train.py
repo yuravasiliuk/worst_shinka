@@ -55,6 +55,7 @@ def _load_algorithm(algorithm_path: str):
 
 def _play_training_episode(env, model, opponent_model, algorithm, epsilon: float, config: dict) -> float:
     env.reset()
+    agents_list = env.agents.copy()  # Keep track of all agents to ensure both act each frame
 
     total_reward = 0.0
     pending_state = None

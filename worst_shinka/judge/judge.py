@@ -146,6 +146,7 @@ class Judge:
         )
 
         env.reset()
+        agents_list = env.agents.copy()  # Keep track of all agents to ensure both act each frame
 
         models = {
             "first_0": model_a,
